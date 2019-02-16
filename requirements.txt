@@ -17,3 +17,6 @@ six==1.12.0
 traitlets==4.3.2
 typing==3.6.6
 wcwidth==0.1.7
+
+# Custom libraries
+-e git://github.com/dredivaris/recipe-scrapers.git#egg=recipe-scrapers
