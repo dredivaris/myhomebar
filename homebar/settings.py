@@ -25,7 +25,7 @@ SECRET_KEY = 'n#0r*@s6ldherb68th2g2n5rk252h+)-oht2sn9ln0qy&srjso'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['0.0.0.0', ]
+ALLOWED_HOSTS = ['0.0.0.0', 'localhost']
 
 
 # Application definition
@@ -38,7 +38,8 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'django_extensions',
-    'api'
+    'api',
+    'graphene_django',
 ]
 
 MIDDLEWARE = [
@@ -125,3 +126,4 @@ USE_TZ = True
 STATIC_URL = '/static/'
 
 SHELL_PLUS = "ipython"
+

@@ -17,12 +17,19 @@ class Unit(models.Model):
 
 
 class Quantity(models.Model):
+    class Meta:
+        verbose_name_plural = 'quantities'
+
+
     amount = models.DecimalField(decimal_places=2, max_digits=3)
     divisor = models.IntegerField(blank=True)
     unit = models.ForeignKey(Unit)
 
 
 class BeverageIngredients(models.Model):
+    class Meta:
+        verbose_name_plural = 'beverage ingredients'
+
     ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE)
     beverage = models.ForeignKey(Beverage, on_delete=models.CASCADE)
     quantity = models.ForeignKey(Quantity, on_delete=models.CASCADE)
