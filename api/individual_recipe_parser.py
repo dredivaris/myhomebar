@@ -286,7 +286,7 @@ class IndividualRecipeParser(object):
             for specific_parse_type, is_done in specific_parse_mapping.items():
                 if step == specific_parse_type and is_done:
                     current_step_increment += 1
-
+                    step = steps[current_step_increment]
             return step
 
         def parse_tagged_lines(current_line):
@@ -323,6 +323,8 @@ class IndividualRecipeParser(object):
                 continue
             current_step = get_step()
             try:
+                if parse_tagged_lines(line):
+                    continue
                 if current_step == Step.INGREDIENTS or \
                         (current_step == Step.DIRECTIONS and
                          not format['to_split_sentence_directions']):
