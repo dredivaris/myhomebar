@@ -23,6 +23,7 @@ class Beverage(models.Model):
     directions = models.TextField(null=True)
     attribution = models.TextField(null=True)
     glassware = models.CharField(max_length=100, null=True)
+    tools = models.CharField(max_length=300, null=True)
 
     def __str__(self):
         return self.name
