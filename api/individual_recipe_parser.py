@@ -93,7 +93,8 @@ class IndividualRecipeParser(object):
     number_matcher = re.compile(r"(^[\xbc\xbd\xbe])|(^(\d*[.,/]?\d*))")
     ingredient_parser = re.compile(
         r"^(((\d*[.,/]?\d*)?[\xbc\xbd\xbe])|(\d*[.,/]?\d*)) ?({})?[\. ](.*)".format('|'.join(ALL_UNITS)))
-
+    juice_of_parser = re.compile(r"^Juice of (\d+) (\w+)(?:.*)")
+    alternative_unit_location_parser = re.compile(r"^.*(?:(\d+) ?({}))".format('|'.join(ALL_UNITS)))
     # g 1 is number, g 4 is unit, g 5 is ingredient
 
     def __init__(self):
@@ -206,16 +207,27 @@ class IndividualRecipeParser(object):
                 print('ingredient is a garnish')
                 parsed_recipe['garnish'] = text.strip()
             else:
-                match = self.ingredient_parser.match(text.strip())
+                cleaned_text = text.strip()
+                match = self.ingredient_parser.match(cleaned_text)
                 if not match:
-                    print('ingredient ', text, ' does not match!')
-                    raise SkipToNextException()
-
-                ingredient = {
-                    'amount': match.group(1),
-                    'unit': match.group(5),
-                    'ingredient': match.group(6),
-                }
+                    match = self.juice_of_parser.match(cleaned_text)
+                    if not match:
+                        print('ingredient ', text, ' does not match!')
+                        raise SkipToNextException()
+                    ingredient = {
+                        'amount': match.group(1),
+                        'ingredient': match.group(2) + ' juice',
+                    }
+                    match = self.alternative_unit_location_parser.match(cleaned_text)
+                    if match:
+                        ingredient['amount'] = match.group(1)
+                        ingredient['unit'] = match.group(2)
+                else:
+                    ingredient = {
+                        'amount': match.group(1),
+                        'unit': match.group(5),
+                        'ingredient': match.group(6),
+                    }
                 parsed_recipe['ingredients'].append(ingredient)
 
         def parse_directions(text):
