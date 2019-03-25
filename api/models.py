@@ -24,6 +24,7 @@ class Beverage(models.Model):
     attribution = models.TextField(null=True)
     glassware = models.CharField(max_length=100, null=True)
     tools = models.CharField(max_length=300, null=True)
+    rating = models.FloatField(null=True, blank=True)
 
     def __str__(self):
         return self.name
