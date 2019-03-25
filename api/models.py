@@ -15,15 +15,32 @@ class Ingredient(models.Model):
         return self.name
 
 
-class Beverage(models.Model):
+class Recipe(models.Model):
+    COCKTAIL = 'COCKTAIL'
+    SYRUP = 'SYRUP'
+    CORDIAL = 'CORDIAL'
+    BITTERS = 'BITTERS'
+    OTHER = 'OTHER'
+
+    TYPES = (
+        (COCKTAIL, 'Cocktail'),
+        (SYRUP, 'Syrup'),
+        (CORDIAL, 'Cordial'),
+        (BITTERS, 'Bitters'),
+        (OTHER, 'Other')
+
+    )
     name = models.CharField(max_length=1000)
     owner = models.ForeignKey(User)
-    ingredients = models.ManyToManyField(Ingredient, through='BeverageIngredients')
+    recipe_type = models.CharField(max_length=20, choices=TYPES, default=COCKTAIL)
+    ingredients = models.ManyToManyField(Ingredient, through='RecipeIngredients')
     description = models.TextField(null=True)
     directions = models.TextField(null=True)
     attribution = models.TextField(null=True)
     glassware = models.CharField(max_length=100, null=True)
     tools = models.CharField(max_length=300, null=True)
+    rating = models.FloatField(null=True, blank=True)
+    notes = models.TextField(null=True, blank=True)
 
     def __str__(self):
         return self.name
@@ -49,12 +66,12 @@ class Quantity(models.Model):
         return '{} {}'.format(self.amount, self.unit.name) if self.unit.name else self.amount
 
 
-class BeverageIngredients(models.Model):
+class RecipeIngredients(models.Model):
     class Meta:
-        verbose_name_plural = 'beverage ingredients'
+        verbose_name_plural = 'recipe ingredients'
 
     ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE)
-    beverage = models.ForeignKey(Beverage, on_delete=models.CASCADE)
+    beverage = models.ForeignKey(Recipe, on_delete=models.CASCADE)
     quantity = models.ForeignKey(Quantity, on_delete=models.CASCADE)
 
     def __str__(self):
