@@ -226,7 +226,7 @@ class IndividualRecipeParser(object):
                     ingredient = {
                         'amount': match.group(1),
                         'unit': match.group(5),
-                        'ingredient': match.group(6),
+                        'ingredient': match.group(6).strip(),
                     }
                 parsed_recipe['ingredients'].append(ingredient)
 
