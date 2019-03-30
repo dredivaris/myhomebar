@@ -37,6 +37,8 @@ class Recipe(models.Model):
     description = models.TextField(null=True)
     directions = models.TextField(null=True)
     attribution = models.TextField(null=True)
+    source = models.CharField(null=True, blank=True, max_length=200)
+    source_url = models.URLField(null=True, blank=True)
     glassware = models.CharField(max_length=100, null=True)
     tools = models.CharField(max_length=300, null=True)
     rating = models.FloatField(null=True, blank=True)
