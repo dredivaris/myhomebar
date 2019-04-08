@@ -7,6 +7,7 @@ services:
     networks:
       - psql-pgql
   web:
+    container_name: web
     build: .
     command: python manage.py runserver 0.0.0.0:8000
     volumes:
@@ -17,7 +18,8 @@ services:
       - db
     networks:
       - psql-pgql
-
+    stdin_open: true
+    tty: true
   graphql:
     container_name: pgql
     restart: always
@@ -31,7 +33,7 @@ services:
     ports:
       - 5000:5000
     command: ["postgraphile", "--connection", $DATABASE_URL, "--host", "0.0.0.0", "--port", "5000",
-              "--schema", "public", "--enhance-graphiql", "-w"]
+              "--schema", "public", "--enhance-graphiql", "-w", "--cors"]
     links:
       - db
     networks:
