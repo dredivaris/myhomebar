@@ -4,8 +4,12 @@ from django.db import models
 
 class Ingredient(models.Model):
     name = models.CharField(max_length=1000)
+    owner = models.ForeignKey(User)
     parent = models.ForeignKey('self', blank=True, null=True)
     is_garnish = models.BooleanField(default=False)
+
+    class Meta:
+        unique_together = (('name', 'owner'),)
 
     @property
     def is_generic(self):
@@ -13,6 +17,10 @@ class Ingredient(models.Model):
 
     def __str__(self):
         return self.name
+
+    def save(self, *args, **kwargs):
+        self.name = self.name.title()
+        super().save(*args, **kwargs)
 
 
 class Recipe(models.Model):
@@ -33,7 +41,7 @@ class Recipe(models.Model):
     name = models.CharField(max_length=1000)
     owner = models.ForeignKey(User)
     recipe_type = models.CharField(max_length=20, choices=TYPES, default=COCKTAIL)
-    ingredients = models.ManyToManyField(Ingredient, through='RecipeIngredients')
+    ingredients = models.ManyToManyField(Ingredient, through='api.RecipeIngredient')
     description = models.TextField(null=True)
     directions = models.TextField(null=True)
     attribution = models.TextField(null=True)
@@ -51,6 +59,10 @@ class Recipe(models.Model):
 class Unit(models.Model):
     # TODO: is this how we want to handle units?
     name = models.CharField(max_length=200)
+    owner = models.ForeignKey(User)
+
+    class Meta:
+        unique_together = (('name', 'owner'),)
 
     def __str__(self):
         return self.name
@@ -64,11 +76,23 @@ class Quantity(models.Model):
     divisor = models.IntegerField(blank=True, null=True)
     unit = models.ForeignKey(Unit, null=True, blank=True)
 
+    @classmethod
+    def create_quantity(cls, quantity, unit):
+        result = None
+        dividend_divisor = quantity.split('/')
+        if len(dividend_divisor) == 1:
+            result, _ = cls.objects.get_or_create(amount=dividend_divisor[0], divisor=None, unit=unit)
+        else:
+            result, _ = cls.objects.get_or_create(amount=dividend_divisor[0],
+                                               divisor=dividend_divisor[1],
+                                               unit=unit)
+        return result
+
     def __str__(self):
         return '{} {}'.format(self.amount, self.unit.name) if self.unit.name else self.amount
 
 
-class RecipeIngredients(models.Model):
+class RecipeIngredient(models.Model):
     class Meta:
         verbose_name_plural = 'recipe ingredients'
 
