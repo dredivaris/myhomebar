@@ -40,11 +40,13 @@ INSTALLED_APPS = [
     'django_extensions',
     'api',
     'graphene_django',
+    'corsheaders',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -120,10 +122,24 @@ USE_L10N = True
 USE_TZ = True
 
 
+# Graphene django settings
+# GRAPHENE = {
+#     'SCHEMA': 'homebar.schema.schema'
+# }
+
+
+
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/1.11/howto/static-files/
 
 STATIC_URL = '/static/'
 
 SHELL_PLUS = "ipython"
+
+CORS_ORIGIN_ALLOW_ALL = True
+
+CORS_ORIGIN_WHITELIST = (
+    '127.0.0.1',
+    'localhost',
+)
 
