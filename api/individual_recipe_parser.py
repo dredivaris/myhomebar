@@ -27,6 +27,12 @@ GLASSWARE = {
     'rocks glass', 'double rocks glass', 'fizz glass', 'snifter', 'pewter cup', 'mug',
     'highball glass', 'nick and nora glass'
 }
+NUMBER_MATCHER = re.compile(r"(^[\xbc\xbd\xbe])|(^(\d*[.,/]?\d*))")
+INGREDIENT_PARSER = re.compile(
+    r"^(((\d*[.,/]?\d*)?[\xbc\xbd\xbe])|(\d*[.,/]?\d*)) ?({})?[\. ](.*)".format('|'
+                                                                                .join(ALL_UNITS)))
+JUICE_OF_PARSER = re.compile(r"^Juice of (\d+) (\w+)(?:.*)")
+ALTERNATIVE_UNIT_LOCATION_PARSER = re.compile(r"^.*(?:(\d+) ?({}))".format('|'.join(ALL_UNITS)))
 
 
 StepReq = namedtuple('StepReq', 'step, required')
@@ -90,11 +96,6 @@ class RecipeFormat:
 
 
 class IndividualRecipeParser(object):
-    number_matcher = re.compile(r"(^[\xbc\xbd\xbe])|(^(\d*[.,/]?\d*))")
-    ingredient_parser = re.compile(
-        r"^(((\d*[.,/]?\d*)?[\xbc\xbd\xbe])|(\d*[.,/]?\d*)) ?({})?[\. ](.*)".format('|'.join(ALL_UNITS)))
-    juice_of_parser = re.compile(r"^Juice of (\d+) (\w+)(?:.*)")
-    alternative_unit_location_parser = re.compile(r"^.*(?:(\d+) ?({}))".format('|'.join(ALL_UNITS)))
     # g 1 is number, g 4 is unit, g 5 is ingredient
 
     def __init__(self):
@@ -117,8 +118,14 @@ class IndividualRecipeParser(object):
                     pass
         return self.formats
 
+    def parse_ingredients(self):
+        pass
+
+    def parse_instructions(self):
+        pass
+
     def is_ingredient(self, text):
-        num_match = self.number_matcher.match(text)
+        num_match = NUMBER_MATCHER.match(text)
         print('checking is ingredient', num_match, num_match.group(0), text)
         if not num_match:
             return False
@@ -208,9 +215,9 @@ class IndividualRecipeParser(object):
                 parsed_recipe['garnish'] = text.strip()
             else:
                 cleaned_text = text.strip()
-                match = self.ingredient_parser.match(cleaned_text)
+                match = INGREDIENT_PARSER.match(cleaned_text)
                 if not match:
-                    match = self.juice_of_parser.match(cleaned_text)
+                    match = JUICE_OF_PARSER.match(cleaned_text)
                     if not match:
                         print('ingredient ', text, ' does not match!')
                         raise SkipToNextException()
@@ -218,7 +225,7 @@ class IndividualRecipeParser(object):
                         'amount': match.group(1),
                         'ingredient': match.group(2) + ' juice',
                     }
-                    match = self.alternative_unit_location_parser.match(cleaned_text)
+                    match = ALTERNATIVE_UNIT_LOCATION_PARSER.match(cleaned_text)
                     if match:
                         ingredient['amount'] = match.group(1)
                         ingredient['unit'] = match.group(2)
