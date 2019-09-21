@@ -13,27 +13,27 @@ class RecipeValidator(object):
         self.recipe = None
 
     def validate(self):
+        print('proc ingredients')
         self.ingredients = self.process_ingredients()
+        print('proc type')
         self.recipe_type = self.process_type()
         self.process_garnish()
         self.process_rating()
 
     def save(self):
-        print('print 1')
         self.recipe_raw['name'] = self.recipe_raw['name'].title()
         self.recipe = Recipe(**self.recipe_raw)
-        print('print 2')
 
-        # todo: remove this and use a real owner:
-        self.recipe.owner = User.objects.get(username='root')
+        self.recipe.owner = self.user
+
         self.recipe.save()
-        print('print 3')
         for ingredient in self.ingredients:
             self.save_and_add_ingredient(ingredient)
-            print('print 4')
 
         self.save_and_add_garnish()
-        print('print 5')
+
+    def with_user(self, user):
+        self.user = user
 
     def process_ingredients(self):
         ingredient_text = self.recipe_raw['ingredients']
@@ -76,7 +76,10 @@ class RecipeValidator(object):
 
     def process_garnish(self):
         # todo: we want to support multiple garnishes in the future and garnish units
-        garnish = self.recipe_raw['garnish'].strip()
+        try:
+            garnish = self.recipe_raw['garnish'].strip()
+        except KeyError:
+            return
         if garnish:
             self.garnish = garnish
         self.recipe_raw.pop('garnish')
