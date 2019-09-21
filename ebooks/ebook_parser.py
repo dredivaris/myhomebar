@@ -107,7 +107,7 @@ class DeathAndCoParser(BookParser):
 
         @property
         def glass(self):
-            self.instructions()
+            self.instructions
             return self.find_any_glass(self._instructions)
 
         @property
