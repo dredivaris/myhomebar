@@ -1,8 +1,8 @@
 import graphene
 from graphql import GraphQLError
 
+from api.domain import create_recipe
 from api.types import AddRecipeResponseGraphql
-from api.validators import RecipeValidator
 
 from django.contrib.auth import get_user_model
 
@@ -57,11 +57,10 @@ class AddRecipe(graphene.Mutation):
     Output = AddRecipeResponseGraphql
 
     def mutate(self, info, **args):
+        print('currently logged in user is', info.context.user)
         from pprint import pprint
         pprint(args)
-        recipe_validator = RecipeValidator(**args)
-        recipe_validator.validate()
-        recipe_validator.save()
+        create_recipe(args, info.context.user)
 
 
 class Mutation(object):
