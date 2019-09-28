@@ -31,10 +31,7 @@ class Query(object):
     me = graphene.Field(UserType)
 
     def resolve_me(self, info):
-
         user = info.context.user
-        # import pdb
-        # pdb.set_trace()
         if user.is_anonymous:
             raise Exception('Not logged in!')
 
@@ -42,5 +39,16 @@ class Query(object):
 
     users_recipes = graphene.List(RecipeType)
 
-    def resolve_users_recipes(self, info, user_id):
-        return self.users_recipes
+    def resolve_users_recipes(self, info):
+        user = info.context.user
+        if user.is_anonymous:
+            raise Exception('Not logged in!')
+
+        recipes = Recipe.objects.filter(owner=user)
+        print(f'recipes for user {user} are {recipes}, len tot {Recipe.objects.count()}')
+        return recipes
+
+    users_recipe = graphene.Field(RecipeType, id=graphene.Int(required=True))
+
+    def resolve_users_recipe(self, info, id):
+        return Recipe.objects.get(pk=id)
