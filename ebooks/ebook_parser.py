@@ -4,6 +4,7 @@ import ebooklib
 from ebooklib import epub
 from bs4 import BeautifulSoup
 
+from api.domain import create_recipe
 from api.individual_recipe_parser import GLASSWARE
 from recipe_scrapers._utils import normalize_string
 
@@ -18,7 +19,12 @@ class RecipeParser:
         raise NotImplementedError("This should be implemented.")
 
     @property
+    def attribution(self):
+        return None
+
+    @property
     def garnish(self):
+        self._garnish = None
         return None
 
     @property
@@ -36,6 +42,14 @@ class RecipeParser:
     @property
     def instructions(self):
         raise NotImplementedError("This should be implemented.")
+
+    @property
+    def tools(self):
+        return None
+
+    @property
+    def source(self):
+        return getattr(self, '_source', None)
 
     def ratings(self):
         return None
@@ -78,7 +92,8 @@ class BookParser:
     @classmethod
     def get_recipe_parsers(cls):
         return [cls_attribute for cls_attribute in cls.__dict__.values()
-                if inspect.isclass(cls_attribute)]
+                if inspect.isclass(cls_attribute) and
+                not hasattr(cls_attribute.__dict__.get('Meta'), 'abstract')]
 
     def parse_book(self):
         for html in self.html_gen:
@@ -89,21 +104,53 @@ class BookParser:
     def parse_recipes(self, item):
         raise NotImplementedError
 
+# from ebooks.ebook_parser import *
 # p=DeathAndCoParser('./ebooks/epub/deathco.epub')
 # p.parse_book()
-# p.recipe_objects[210].garnish
+# import_parsed_recipes_from_parser(p, User.objects.first())
+
+# p.recipe_objects[323].glass
+
+def import_parsed_recipes_from_parser(parser, user):
+    i = 1
+    for recipe in parser.recipe_objects:
+        data = {
+            'name': recipe.title,
+            'attribution': recipe.attribution,
+            'directions': recipe.instructions,
+            'garnish': recipe.garnish,
+            'glassware': recipe.glass,
+            'ingredients': recipe.ingredients,
+            'recipe_type': 'COCKTAIL',
+            'source': recipe.source,
+        }
+        data = {k: v for k, v in data.items() if v is not None}
+        print(f'Creating recipe {i}')
+        create_recipe(data, user)
+        i += 1
+
 
 class DeathAndCoParser(BookParser):
-    class DeathCoRecipeOne(RecipeParser):
+    class ParserBase(RecipeParser):
+        _source = 'Death & Co'
+
+        class Meta:
+            abstract = True
+
+        @property
+        def garnish(self):
+            if hasattr(self, '_garnish'):
+                return self._garnish
+
+            self.ingredients
+            return getattr(self, '_garnish', None)
+
+    class DeathCoRecipeOne(ParserBase):
+
         @classmethod
         def find_all_possible(cls, root):
             all_possible = root.find_all('p', {'class': 'box_subheader'})
             return [cls(element) for element in all_possible]
-
-        @property
-        def garnish(self):
-            self.ingredients
-            return self._garnish
 
         @property
         def glass(self):
@@ -116,37 +163,37 @@ class DeathAndCoParser(BookParser):
 
         @property
         def ingredients(self):
-            vals = self.entry_parent.find('div', {'class': 'ingredients'}).find_all('p')
+            try:
+                vals = self.entry_parent.find('div', {'class': 'ingredients'}).find_all('p')
+            except AttributeError:
+                vals = self.entry_parent.find('div', {'class': 'ingredients1'}).find_all('p')
+
             rets = []
             for val in vals:
-                if val.startswith('GARNISH:'):
+                if val.startswith('GARNISH:') if isinstance(val, str) \
+                        else val.get_text().startswith('GARNISH:'):
                     self._garnish = normalize_string(val.text.split(':')[1].strip())
                 else:
                     rets.append(normalize_string(val.text))
-            return vals
+            return rets
 
         @property
         def instructions(self):
             if hasattr(self, '_instructions'):
                 return self._instructions
+            try:
+                instructions = self.entry_parent.find_all('p', {'class': 'box_nonindent'})[-1].text
+            except:
+                instructions = self.entry_parent.find_all('p', {'class': 'nonindent_l'})[-1].text
 
-            instructions = self.entry_parent.find_all('p', {'class': 'box_nonindent'})[-1].text
             self._instructions = normalize_string(instructions)
             return self._instructions
 
-    class DeathCoRecipeTwo(RecipeParser):
+    class DeathCoRecipeTwo(ParserBase):
         @classmethod
         def find_all_possible(cls, root):
             all_possible = root.find_all('h3', {'class': 'recipe_subtitle1'})
             return [cls(element) for element in all_possible]
-
-        @property
-        def garnish(self):
-            if hasattr(self, '_garnish'):
-                return self._garnish
-
-            self.ingredients
-            return self._garnish
 
         @property
         def glass(self):
