@@ -137,10 +137,23 @@ class Quantity(models.Model):
     def display_amount(self):
         return str(int(self.amount)) if self._is_integer(self.amount) else str(self.amount)
 
+    def display_int(self, num):
+        return str(int(num)) if self._is_integer(num) else str(num)
+
+    @property
+    def display_fraction(self):
+        dividend = self.amount
+        integer = 0
+        while dividend > self.divisor:
+            dividend -= self.divisor
+            integer += 1
+        integer = f'{str(integer)} ' if integer else ''
+        return f'{integer}{self.display_int(dividend)}/{str(self.divisor)}'
+
     def __str__(self):
         if self.amount and self.divisor:
-            unit = f' {self.unit.name}' if getattr(self.unit, 'name', None) else ''
-            return f'{str(int(self.display_amount))}/{str(self.divisor)}{unit}'
+            unit = f'{self.unit.name}' if getattr(self.unit, 'name', None) else ''
+            return f'{self.display_fraction} {unit}'
         else:
             return str(f'{self.display_amount} {self.unit.name}'
                        if getattr(self.unit, 'name', None) else self.display_amount)
