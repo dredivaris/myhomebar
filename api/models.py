@@ -1,11 +1,22 @@
+from unicodedata import numeric
+from fractions import Fraction
+
 from django.contrib.auth.models import User
 from django.db import models
 
 
+class MyFraction(Fraction):
+    def __str__(self):
+        if self.numerator < self.denominator:
+            return f'{self.numerator}/{self.denominator}'
+        else:
+            return f'{self.numerator // self.denominator} {self.numerator % self.denominator}/{self.denominator}'
+
+
 class Ingredient(models.Model):
     name = models.CharField(max_length=1000)
-    owner = models.ForeignKey(User)
-    parent = models.ForeignKey('self', blank=True, null=True)
+    owner = models.ForeignKey(User, on_delete=models.CASCADE)
+    parent = models.ForeignKey('self', blank=True, null=True, on_delete=models.CASCADE)
     is_garnish = models.BooleanField(default=False)
 
     class Meta:
@@ -39,7 +50,7 @@ class Recipe(models.Model):
 
     )
     name = models.CharField(max_length=1000)
-    owner = models.ForeignKey(User)
+    owner = models.ForeignKey(User, on_delete=models.CASCADE)
     recipe_type = models.CharField(max_length=20, choices=TYPES, default=COCKTAIL)
     ingredients = models.ManyToManyField(Ingredient, through='api.RecipeIngredient')
     description = models.TextField(null=True)
@@ -59,7 +70,7 @@ class Recipe(models.Model):
 class Unit(models.Model):
     # TODO: is this how we want to handle units?
     name = models.CharField(max_length=200)
-    owner = models.ForeignKey(User)
+    owner = models.ForeignKey(User, on_delete=models.CASCADE)
 
     class Meta:
         unique_together = (('name', 'owner'),)
@@ -71,25 +82,68 @@ class Unit(models.Model):
 class Quantity(models.Model):
     class Meta:
         verbose_name_plural = 'quantities'
+        unique_together = [['amount', 'divisor', 'unit']]
 
-    amount = models.DecimalField(decimal_places=2, max_digits=3)
+    amount = models.DecimalField(decimal_places=2, max_digits=5)
     divisor = models.IntegerField(blank=True, null=True)
-    unit = models.ForeignKey(Unit, null=True, blank=True)
+    unit = models.ForeignKey(Unit, null=True, blank=True, on_delete=models.CASCADE)
 
     @classmethod
     def create_quantity(cls, quantity, unit):
-        result = None
+        result, fr = None, None
         dividend_divisor = quantity.split('/')
-        if len(dividend_divisor) == 1:
-            result, _ = cls.objects.get_or_create(amount=dividend_divisor[0], divisor=None, unit=unit)
+        if len(quantity) < 3:
+            try:
+                fr = MyFraction(
+                    str(numeric(quantity[0]) + numeric(quantity[1] if len(quantity) > 1 else '0')))
+            except Exception as e:
+                import pdb
+                pdb.set_trace()
+
+        try:
+            int(quantity)
+        except ValueError:
+            pass
+        else:
+            fr = None
+
+        if fr:
+            result, _ = cls.objects.get_or_create(amount=fr.numerator,
+                                                  divisor=fr.denominator,
+                                                  unit=unit)
+        elif len(dividend_divisor) == 1:
+            try:
+                result, _ = cls.objects.get_or_create(amount=dividend_divisor[0], divisor=None, unit=unit)
+            except:
+                import pdb
+                pdb.set_trace()
+
         else:
             result, _ = cls.objects.get_or_create(amount=dividend_divisor[0],
-                                               divisor=dividend_divisor[1],
-                                               unit=unit)
+                                                  divisor=dividend_divisor[1],
+                                                  unit=unit)
         return result
 
+    def _is_integer(self, decimal):
+        return decimal % 1 == 0
+
+    def is_integer(self):
+        return True if self._is_integer(self.amount) and not self.divisor else False
+
+    def to_float(self):
+        return float(self.amount/self.divisor) if self.divisor else float(self.amount)
+
+    @property
+    def display_amount(self):
+        return str(int(self.amount)) if self._is_integer(self.amount) else str(self.amount)
+
     def __str__(self):
-        return '{} {}'.format(self.amount, self.unit.name) if self.unit.name else self.amount
+        if self.amount and self.divisor:
+            unit = f' {self.unit.name}' if getattr(self.unit, 'name', None) else ''
+            return f'{str(int(self.display_amount))}/{str(self.divisor)}{unit}'
+        else:
+            return str(f'{self.display_amount} {self.unit.name}'
+                       if getattr(self.unit, 'name', None) else self.display_amount)
 
 
 class RecipeIngredient(models.Model):
@@ -98,8 +152,13 @@ class RecipeIngredient(models.Model):
 
     ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE)
     beverage = models.ForeignKey(Recipe, on_delete=models.CASCADE)
-    quantity = models.ForeignKey(Quantity, on_delete=models.CASCADE)
+    quantity = models.ForeignKey(Quantity, null=True, blank=True, on_delete=models.CASCADE)
 
     def __str__(self):
-        return '{} {} of {}'.format(
-            self.quantity.amount, self.quantity.unit.name, self.ingredient.name)
+        if self.quantity:
+            if self.quantity.is_integer() and self.quantity.amount == 1:
+                if self.ingredient.name[0].isdigit():
+                    return self.ingredient.name
+                return f'{self.quantity} {self.ingredient.name}'
+            return f'{self.quantity} of {self.ingredient.name}'
+        return self.ingredient.name
