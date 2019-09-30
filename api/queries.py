@@ -25,7 +25,12 @@ class RecipeType(DjangoObjectType):
     ingredients = graphene.List(graphene.String)
 
     def resolve_ingredients(self, info):
-        return self.ingredients_set
+        return [i for i in self.ingredients_set if not i.ingredient.is_garnish]
+
+    garnishes = graphene.List(graphene.String)
+
+    def resolve_garnishes(self, info):
+        return [i for i in self.ingredients_set if i.ingredient.is_garnish]
 
 
 class Query(object):
