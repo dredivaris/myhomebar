@@ -162,7 +162,7 @@ QUERYCOUNT = {
     },
     'IGNORE_REQUEST_PATTERNS': [],
     'IGNORE_SQL_PATTERNS': [],
-    'DISPLAY_DUPLICATES': None,
+    'DISPLAY_DUPLICATES': 10,
     'RESPONSE_HEADER': 'X-DjangoQueryCount-Count'
 }
 
