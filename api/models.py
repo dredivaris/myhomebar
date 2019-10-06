@@ -172,6 +172,5 @@ class RecipeIngredient(models.Model):
             if self.quantity.is_integer() and self.quantity.amount == 1:
                 if self.ingredient.name[0].isdigit():
                     return self.ingredient.name
-                return f'{self.quantity} {self.ingredient.name}'
-            return f'{self.quantity} of {self.ingredient.name}'
+            return f'{self.quantity} {self.ingredient.name}'
         return self.ingredient.name
