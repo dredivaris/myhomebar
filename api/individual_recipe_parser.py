@@ -1,5 +1,4 @@
 import re
-import unicodedata
 import nltk
 
 from collections import namedtuple
@@ -25,7 +24,7 @@ ALL_UNITS = list(UNITS) + [u.upper() for u in UNITS]
 GLASSWARE = {
     'coupe', 'old-fashioned glass', 'old fashioned glass', 'double old-fashioned glass',
     'rocks glass', 'double rocks glass', 'fizz glass', 'snifter', 'pewter cup', 'mug',
-    'highball glass', 'nick and nora glass'
+    'highball glass', 'nick and nora glass', 'punch glass', 'goblet', 'julep', 'flute'
 }
 NUMBER_MATCHER = re.compile(r"(^[\xbc\xbd\xbe])|(^(\d*[.,/]?\d*))")
 INGREDIENT_PARSER = re.compile(
@@ -37,14 +36,18 @@ ALTERNATIVE_UNIT_LOCATION_PARSER = re.compile(r"^.*(?:(\d+) ?({}))".format('|'.j
 
 StepReq = namedtuple('StepReq', 'step, required')
 
+
 def string_found(string1, string2):
     return re.search(r'\b%s\b' % (re.escape(string1)), string2) is not None
+
 
 class InvalidParseStepException(Exception):
     pass
 
+
 class SkipToNextException(Exception):
     pass
+
 
 class RecipeFormat:
     recipe_formats = {
@@ -126,7 +129,6 @@ class IndividualRecipeParser(object):
 
     def is_ingredient(self, text):
         num_match = NUMBER_MATCHER.match(text)
-        print('checking is ingredient', num_match, num_match.group(0), text)
         if not num_match:
             return False
         if not num_match.group(0):
