@@ -4,4 +4,5 @@
  WORKDIR /code
  COPY requirements.txt /code/
  RUN pip install -r requirements.txt --src /usr/local/src
+ RUN python -m nltk.downloader all
  COPY . /code/
