@@ -1,5 +1,6 @@
 import graphene
 from django.contrib.auth import get_user_model
+from django.contrib.postgres.search import SearchVector
 from django.db.models import Prefetch
 
 from graphene_django.types import DjangoObjectType
@@ -22,15 +23,20 @@ class RecipeType(DjangoObjectType):
     class Meta:
         model = Recipe
 
-    ingredients = graphene.List(graphene.String)
+    all_ingredients = graphene.List(graphene.String)
 
-    def resolve_ingredients(self, info):
-        return [i for i in self.ingredients_set if not i.ingredient.is_garnish]
+    def resolve_all_ingredients(self, info):
+        return [str(i) for i in self.recipeingredient_set.all() if not i.ingredient.is_garnish]
+
+    ingredients_text = graphene.String()
+
+    def resolve_ingredients_text(self, info):
+        return ', '.join(i.name for i in self.ingredients.all() if not i.is_garnish)
 
     garnishes = graphene.List(graphene.String)
 
     def resolve_garnishes(self, info):
-        return [i for i in self.ingredients_set if i.ingredient.is_garnish]
+        return [i for i in self.recipeingredient_set.all() if i.ingredient.is_garnish]
 
 
 class Query(object):
@@ -61,16 +67,36 @@ class Query(object):
             raise Exception('Not logged in!')
 
         ri_query = RecipeIngredient.objects.select_related('ingredient', 'quantity__unit')
-        recipes = Recipe.objects.filter(
-            owner=user,
-            recipe_type=Recipe.COCKTAIL
+        return Recipe.objects.filter(
+            owner=user, recipe_type=Recipe.COCKTAIL
         ).prefetch_related(
-            Prefetch('recipeingredient_set', queryset=ri_query, to_attr='ingredients_set')
+            Prefetch(
+                'recipeingredient_set',
+                queryset=ri_query,
+                to_attr='ingredients_set',
+            )
         )
-        # print(f'recipes for user {user} are {recipes}, len tot {Recipe.objects.count()}')
-        return recipes
 
     users_recipe = graphene.Field(RecipeType, id=graphene.Int(required=True))
 
     def resolve_users_recipe(self, info, id):
         return Recipe.objects.get(pk=id)
+
+    searched_recipes = graphene.List(RecipeType, search_term=graphene.String(required=False))
+
+    def resolve_searched_recipes(self, info, search_term=None):
+        # TODO: add ability for multiple search filters via commas or semicolons
+        if not search_term:
+            return Recipe.objects.all().prefetch_related('ingredients')
+
+        ids = Recipe.objects\
+            .annotate(search=SearchVector('name') + SearchVector('ingredients__name'))\
+            .filter(search=search_term).values_list('id', flat=True)
+
+        ids = set(ids)
+        return Recipe.objects.filter(id__in=ids).prefetch_related('ingredients')
+
+    recipe = graphene.Field(RecipeType, recipe_id=graphene.Int(required=True))
+
+    def resolve_recipe(self, info, recipe_id):
+        return Recipe.objects.filter(id=recipe_id).prefetch_related('ingredients').first()
