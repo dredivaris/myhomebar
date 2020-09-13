@@ -70,6 +70,7 @@ class Recipe(models.Model):
 class Unit(models.Model):
     # TODO: is this how we want to handle units?
     name = models.CharField(max_length=200)
+    type = models.CharField(max_length=200, default=None, null=True)
     owner = models.ForeignKey(User, on_delete=models.CASCADE)
 
     class Meta:
