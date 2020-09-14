@@ -383,7 +383,7 @@ def is_directions_classifier(text):
     def tag_count_line(line_text):
         pos = nltk.pos_tag(nltk.word_tokenize(line_text))
         counts = Counter(i[1] for i in pos)
-        return counts
+        return counts, len(pos)
 
     def has_unit(text):
         return bool(Ingreedy().parse(text)['quantity'])
@@ -395,7 +395,7 @@ def is_directions_classifier(text):
     elif lines:
         line = lines[0]
         line, has_parens = remove_all_text_in_parens(line)
-        tag_counts = tag_count_line(line)
+        tag_counts, length = tag_count_line(line)
 
         has_starting_number = line.split()[0].replace('.', '', 1).replace('/', '', 1).isdigit()
         # has_comma = ',' in tag_counts
@@ -404,6 +404,7 @@ def is_directions_classifier(text):
         tags = set(tag_counts)
         difference = tags - POS_COMMONLY_FOUND_IN_INGREDIENTS
         has_two_or_more_non_ingredient_tags = len(difference) >= 2
+        numerous_words_weight = max((length - 3), 0)*.5
 
         HAS_STARTING_NUMBER = -2
         HAS_UNIT = -2
@@ -415,6 +416,8 @@ def is_directions_classifier(text):
             count += HAS_UNIT
         if has_two_or_more_non_ingredient_tags:
             count += len(difference)
+
+        count += numerous_words_weight
 
         if count > 0:
             return True, count
@@ -435,6 +438,7 @@ def get_text_within_parens(text):
     if start != -1 and end != -1:
         return text[start + 1:end]
     return None
+
 
 def replace_reference_abbreviation_with_name(reference):
     reference_mapping = {
@@ -487,6 +491,7 @@ def create_recipe_from_plaintext(text):
         rating: str = None
         ingredients: list = None
         directions: str = None
+        description: str = None
         garnish: str = None
         reference: str = None
         source: str = None
@@ -539,6 +544,10 @@ def create_recipe_from_plaintext(text):
         print('parsing possible ingredient', line)
         if recipe.ingredients and is_directions_classifier(line):
             break
+        elif not recipe.ingredients and is_directions_classifier(line):
+            # likely to be a description
+            recipe.description = line
+            continue
 
         if 'garnish:' in line.lower():
             recipe.garnish = line.lower().replace('garnish:', '').strip()
@@ -560,13 +569,15 @@ def save_recipe_from_parsed_recipes(parsed):
         url_link: str = None
         rating: str = None
         ingredients: list = None
+        directions: str = None
+        description: str = None
         garnish: str = None
         reference: str = None
         source: str = None
-
     '''
 
     def convert_ingredient(ingredient):
+        print('test')
         return {
             'unit': ingredient['quantity'][0]['unit'],
             'type': ingredient['quantity'][0]['unit_type'],
@@ -582,6 +593,7 @@ def save_recipe_from_parsed_recipes(parsed):
         'rating_set': 'rating_set',
         'rating': parsed.rating,
         'directions': parsed.directions,
+        'description': parsed.description,
         'ingredients': [convert_ingredient(i) for i in parsed.ingredients],
         'recipe_type': Recipe.COCKTAIL,
     }
