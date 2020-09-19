@@ -5,7 +5,7 @@ from django.db.models import Prefetch
 
 from graphene_django.types import DjangoObjectType
 
-from api.models import Ingredient, Recipe, RecipeIngredient
+from api.models import Ingredient, Recipe, RecipeIngredient, PantryIngredient, Pantry
 from api.mutations import UserType
 
 
@@ -37,6 +37,11 @@ class RecipeType(DjangoObjectType):
 
     def resolve_garnishes(self, info):
         return [i for i in self.recipeingredient_set.all() if i.ingredient.is_garnish]
+
+
+class PantryIngredientType(DjangoObjectType):
+    class Meta:
+        model = PantryIngredient
 
 
 class Query(object):
@@ -91,7 +96,7 @@ class Query(object):
 
         ids = Recipe.objects\
             .annotate(search=SearchVector('name') + SearchVector('ingredients__name'))\
-            .filter(search=search_term).values_list('id', flat=True)
+            .filter(search__icontains=search_term).values_list('id', flat=True)
 
         ids = set(ids)
         return Recipe.objects.filter(id__in=ids).prefetch_related('ingredients')
@@ -100,3 +105,13 @@ class Query(object):
 
     def resolve_recipe(self, info, recipe_id):
         return Recipe.objects.filter(id=recipe_id).prefetch_related('ingredients').first()
+
+    users_pantry = graphene.List(PantryIngredientType, id=graphene.Int(required=True))
+
+    def resolve_users_pantry(self, info, id):
+        # owner = User.objects.get(id=1)
+        # TODO: setup login!!!
+        pantry = Pantry.objects.filter(owner_id=1).prefetch_related('pantry_ingredients').first()
+        return pantry.pantry_ingredients.filter(ingredient__is_garnish=False)
+
+    # TODO: add pantry filter search
