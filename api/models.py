@@ -1,3 +1,7 @@
+import csv
+import re
+
+from decimal import Decimal
 from unicodedata import numeric
 from fractions import Fraction
 
@@ -13,11 +17,25 @@ class MyFraction(Fraction):
             return f'{self.numerator // self.denominator} {self.numerator % self.denominator}/{self.denominator}'
 
 
+# class IngredientQuerySet(models.query.QuerySet):
+#     def get_or_create(self, defaults=None, **kwargs):
+#         if 'name' in kwargs:
+#             kwargs['name'] = IngredientMapping.map(kwargs['name']).title()
+#         return super(IngredientQuerySet, self).get_or_create(defaults=defaults, **kwargs)
+
+
+# class IngredientManager(models.Manager):
+#     def get_queryset(self):
+#         return IngredientQuerySet(self.model)
+
+
 class Ingredient(models.Model):
     name = models.CharField(max_length=1000)
     owner = models.ForeignKey(User, on_delete=models.CASCADE)
     parent = models.ForeignKey('self', blank=True, null=True, on_delete=models.CASCADE)
     is_garnish = models.BooleanField(default=False)
+
+    # objects = IngredientManager()
 
     class Meta:
         unique_together = (('name', 'owner'),)
@@ -30,6 +48,9 @@ class Ingredient(models.Model):
         return self.name
 
     def save(self, *args, **kwargs):
+        # if self.id is None:
+        #     self.name = IngredientMapping.map(self.name)
+
         self.name = self.name.title()
         super().save(*args, **kwargs)
 
@@ -62,6 +83,8 @@ class Recipe(models.Model):
     tools = models.CharField(max_length=300, null=True)
     rating = models.FloatField(null=True, blank=True)
     notes = models.TextField(null=True, blank=True)
+    date_added = models.DateTimeField(auto_now=True)
+    date_modified = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return self.name
@@ -91,16 +114,42 @@ class Quantity(models.Model):
 
     @classmethod
     def create_quantity(cls, quantity, unit):
+        if type(quantity) is int:
+            result, _ = cls.objects.get_or_create(amount=quantity, divisor=None, unit=unit)
+            return result
+        if type(quantity) is float:
+            quantity = Decimal(str(quantity))
+            result, _ = cls.objects.get_or_create(amount=quantity, divisor=None, unit=unit)
+            return result
+
         result, fr = None, None
+        quantity = quantity.strip()
         dividend_divisor = quantity.split('/')
-        if len(quantity) < 3:
+        # def is_multiple_fraction(q):
+        #     if len(q.split()) == 2:
+        #         first, second = q.split()
+        #         if not first.isnumeric():
+        #             return False
+        #         else:
+        #             fr = MyFraction(numerator= )
+        #
+        #     else:
+        #         return False
+
+        if len(quantity) < 3 and len(dividend_divisor[0].split()) == 1:
             try:
                 fr = MyFraction(
                     str(numeric(quantity[0]) + numeric(quantity[1] if len(quantity) > 1 else '0')))
             except Exception as e:
-                import pdb
-                pdb.set_trace()
-
+                pass
+        elif len(quantity) >= 3 and len(dividend_divisor[0].split()) > 1:
+            first, second = dividend_divisor[0].split()
+            dividend_divisor[0] = int(int(second) + int(first) * int(dividend_divisor[1]))
+            dividend_divisor[1] = int(int(dividend_divisor[1]))
+            try:
+                fr = MyFraction(numerator=dividend_divisor[0], denominator=dividend_divisor[1])
+            except Exception as e:
+                pass
         try:
             int(quantity)
         except ValueError:
@@ -115,7 +164,7 @@ class Quantity(models.Model):
         elif len(dividend_divisor) == 1:
             try:
                 result, _ = cls.objects.get_or_create(amount=dividend_divisor[0], divisor=None, unit=unit)
-            except:
+            except Exception as e:
                 import pdb
                 pdb.set_trace()
 
@@ -170,8 +219,114 @@ class RecipeIngredient(models.Model):
 
     def __str__(self):
         if self.quantity:
-            if self.quantity.is_integer() and self.quantity.amount == 1:
-                if self.ingredient.name[0].isdigit():
-                    return self.ingredient.name
+            if (
+                self.quantity.is_integer()
+                and self.quantity.amount == 1
+                and self.ingredient.name[0].isdigit()
+            ):
+                return self.ingredient.name
             return f'{self.quantity} {self.ingredient.name}'
         return self.ingredient.name
+
+
+class Pantry(models.Model):
+    owner = models.ForeignKey(User, null=False, on_delete=models.CASCADE)
+    alert_when_out_of_stock = models.BooleanField(default=False)
+
+
+class PantryIngredient(models.Model):
+    class Meta:
+        verbose_name_plural = 'pantry ingredients'
+
+    ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE)
+    pantry = models.ForeignKey(Pantry, on_delete=models.CASCADE, related_name='pantry_ingredients')
+    in_stock = models.BooleanField(default=True)
+
+    def __str__(self):
+        if self.quantity:
+            if (
+                self.quantity.is_integer()
+                and self.quantity.amount == 1
+                and self.ingredient.name[0].isdigit()
+            ):
+                return self.ingredient.name
+            return f'{self.quantity} {self.ingredient.name}'
+        return self.ingredient.name
+
+
+class IngredientMapping(models.Model):
+    '''
+    Used to map from commonly seen processed ingredients to their base ingredient which should be
+    stored as an actual ingredient.  One example would orange juice mapping to orange.
+    '''
+
+    original = models.CharField(max_length=200)
+    final = models.CharField(max_length=200)
+    plural = models.CharField(max_length=200)
+
+    def __str__(self):
+        return f'[{self.original} -> {self.final}]'
+
+    @classmethod
+    def parse_mappings_from_file(cls, file=None):
+        if not file:
+            file = 'ingredients_mapping.csv'
+        mappings = []
+        with open(file) as csvfile:
+            mapping_reader = csv.reader(csvfile)
+            for row in [row for row in mapping_reader][1:]:
+                original, final, plural = row
+                original = original.lower()
+                final = final.lower()
+                plural = plural.lower()
+                if not cls.objects.filter(original=original.lower()):
+                    mappings.append(cls(
+                        original=original.strip(),
+                        final=final.strip(),
+                        plural=plural.strip()
+                    ))
+        cls.objects.bulk_create(mappings)
+
+
+    @staticmethod
+    def _automap(original):
+        def get_matching_group(groups):
+            for group in groups:
+                if group:
+                    return group
+        translators = [
+            re.compile(r'.*?(\w+) slices?|slices? of (\w+)'),
+            re.compile(r'.*?(\w+) twist'),
+            # lambda expr: any(current in expr.lower() for current in possible_matches),
+        ]
+        func_type = type(lambda x: x)
+        for translator in translators:
+            # if type(translator) is re.Pattern:
+            #     if translator.match(original.lower()):
+            #         return get_matching_group(translator.match(original.lower()).groups())
+            # elif type(translator) is func_type:
+            #     if translator(original):
+            #         return
+            if translator.match(original.lower()):
+                print(f'in automap translator, matched: {get_matching_group(translator.match(original.lower()).groups())}')
+                return get_matching_group(translator.match(original.lower()).groups())
+        for final in IngredientMapping.objects.all().values_list('final', flat=True):
+            if final in original:
+                return final
+        return None
+
+    @classmethod
+    def map(cls, ingredient):
+        if cls.objects.count() == 0:
+            cls.parse_mappings_from_file()
+
+        found = cls.objects.filter(original=ingredient.lower())
+        if found:
+            return found[0].final
+        else:
+            automapped = cls._automap(ingredient)
+            if automapped:
+                return automapped
+        return ingredient
+
+    # TODO: use this class when importing from both plaintext and books
