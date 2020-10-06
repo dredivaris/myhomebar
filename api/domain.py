@@ -321,6 +321,13 @@ def create_recipe(data, user):
     recipe_validator.save()
 
 
+def update_recipe(data, user):
+    recipe_validator = RecipeValidator(**data)
+    recipe_validator.with_user(user)
+    recipe_validator.validate()
+    recipe_validator.update()
+
+
 def parse_plaintext_recipe(plaintext_recipe):
     pass
 
@@ -483,6 +490,28 @@ def replace_reference_abbreviation_with_name(reference):
         return None
 
 
+def plaintext_garnish_handler(recipe, line):
+    def add_to_garnish(text):
+        print('line to replace: ', line)
+        if recipe.garnish:
+            recipe.garnish = recipe.garnish.strip() + ', ' + text
+        else:
+            recipe.garnish = text.strip()
+
+    # TODO probably want to make into rule table
+    if 'garnish:' in line.lower():
+        add_to_garnish(line.lower().replace('garnish:', '').strip())
+    elif '(as garnish)' in line.lower():
+        add_to_garnish(line.lower().replace('(as garnish)', ''))
+    elif '(wheel, as garnish)' in line.lower():
+        add_to_garnish(line.lower().replace('(wheel, as garnish)', 'wheel'))
+    elif 'garnish' in line.lower():
+        add_to_garnish(line)
+    else:
+        return False
+    return True
+
+
 def create_recipe_from_plaintext(text):
     @dataclass
     class Recipe:
@@ -549,16 +578,20 @@ def create_recipe_from_plaintext(text):
             recipe.description = line
             continue
 
-        if 'garnish:' in line.lower():
-            recipe.garnish = line.lower().replace('garnish:', '').strip()
-        elif 'garnish' in line.lower():
-            recipe.garnish = line
-        else:
+        if not plaintext_garnish_handler(recipe, line):
             print('to parse ingreedy: ', line)
             parsed_ingredient = Ingreedy().parse(line)
             recipe.ingredients.append(parsed_ingredient)
+        if recipe.garnish:
+            print('done')
+    directions = []
+    for line in lines[index:]:
+        if line.lower().startswith('garnish'):
+            recipe.garnish = line
+        else:
+            directions.append(line)
+    directions = '\n'.join(directions)
 
-    directions = '\n'.join(lines[index:])
     recipe.directions = directions
     return recipe
 
