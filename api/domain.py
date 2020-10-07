@@ -1,6 +1,7 @@
-import re
+import math
 from collections import Counter
 from dataclasses import dataclass
+from fractions import Fraction
 
 import nltk
 from django.contrib.auth.models import User
@@ -313,6 +314,9 @@ custom_ingredient_grammar = Grammar(
 class Ingreedy(BaseIngreedy):
     grammar = custom_ingredient_grammar
 
+    def visit_fraction(self, node, visited_children):
+        return visited_children[0]
+
 
 def create_recipe(data, user):
     recipe_validator = RecipeValidator(**data)
@@ -512,6 +516,25 @@ def plaintext_garnish_handler(recipe, line):
     return True
 
 
+def _convert_to_fractional_text(number):
+    if type(number) is int:
+        return number
+    fraction = Fraction(number).limit_denominator()
+
+    numerator = fraction.numerator
+    denominator = fraction.denominator
+
+    # don't bother returning a text fraction if the granularity is too high
+    if denominator > 10:
+        return number
+
+    if numerator > denominator:
+        int_amount = math.floor(numerator / denominator)
+        fraction_amount = numerator - (int_amount * denominator)
+        return f'{int_amount} {str(Fraction(fraction_amount, denominator))}'
+    else:
+        return str(fraction)
+
 def create_recipe_from_plaintext(text):
     @dataclass
     class Recipe:
@@ -581,6 +604,11 @@ def create_recipe_from_plaintext(text):
         if not plaintext_garnish_handler(recipe, line):
             print('to parse ingreedy: ', line)
             parsed_ingredient = Ingreedy().parse(line)
+            try:
+                parsed_ingredient['quantity'][0]['amount'] = \
+                    _convert_to_fractional_text(parsed_ingredient['quantity'][0]['amount'])
+            except:
+                pass
             recipe.ingredients.append(parsed_ingredient)
         if recipe.garnish:
             print('done')
@@ -610,7 +638,6 @@ def save_recipe_from_parsed_recipes(parsed):
     '''
 
     def convert_ingredient(ingredient):
-        print('test')
         return {
             'unit': ingredient['quantity'][0]['unit'],
             'type': ingredient['quantity'][0]['unit_type'],
