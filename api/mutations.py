@@ -1,11 +1,18 @@
+import json
+
 import graphene
-from graphql import GraphQLError
+import requests
+
+from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
+from django.core.validators import URLValidator
+from graphene_file_upload.scalars import Upload
 
 from api.domain import create_recipe, create_recipe_from_plaintext, save_recipe_from_parsed_recipes, \
-    tokenize_recipes_from_plaintext
+    tokenize_recipes_from_plaintext, update_recipe
 from api.models import Pantry, Ingredient, PantryIngredient
 from api.types import AddRecipeResponseGraphql, AddRecipesFromTextResponseGraphql, \
-    LinkOrCreateIngredientsForPantryResponseGraphql
+    LinkOrCreateIngredientsForPantryResponseGraphql, AddRecipeFlexibleResponseGraphql
 
 from django.contrib.auth import get_user_model
 
@@ -39,6 +46,51 @@ class CreateUser(graphene.Mutation):
         Pantry.objects.create(owner=user)
 
         return CreateUser(user=user)
+
+
+class AddRecipeFlexible(graphene.Mutation):
+    class Arguments:
+        id = graphene.Int(required=True)
+        name = graphene.String()
+        ingredients = graphene.String()
+        directions = graphene.String()
+        rating = graphene.Float()
+        glassware = graphene.String()
+        garnish = graphene.String()
+        description = graphene.String()
+        notes = graphene.String()
+        source = graphene.String()
+        source_url = graphene.String()
+
+    Output = AddRecipeFlexibleResponseGraphql
+
+    def mutate(self, info, **args):
+        owner = User.objects.first()  # todo: add auth
+        print(f'received data from {args}')
+        args['recipe_type'] = 'COCKTAIL'
+        args_to_del = []
+        for argument, value in args.items():
+            if type(value) is str:
+                value = value.strip()
+            if not value:
+                args_to_del.append(argument)
+
+        for arg in args_to_del:
+            del args[arg]
+        if 'source' in args:
+            validator = URLValidator()
+
+            try:
+                validator(args['source'])
+            except ValidationError:
+                pass
+            else:
+                args['source_url'] = args['source']
+                del args['source']
+
+        update_recipe(args, owner)
+
+        return AddRecipeFlexibleResponseGraphql(1)
 
 
 class AddRecipe(graphene.Mutation):
@@ -83,6 +135,71 @@ class AddRecipesFromText(graphene.Mutation):
             recipes_saved_ids.append(save_recipe_from_parsed_recipes(recipe))
 
         return AddRecipesFromTextResponseGraphql(recipe_ids=recipes_saved_ids)
+
+
+class ConvertImageToRecipeText(graphene.Mutation):
+    class Arguments:
+        file = Upload(required=True)
+        file_type = graphene.String(required=True)
+    text = graphene.String()
+
+    def mutate(self, info, file, file_type, **kwargs):
+
+        # first convert / rezise image
+        from PIL import Image
+        import io
+        import base64
+        base64_file = base64.b64decode(file)
+
+        to_file_type = {
+            'image/jpeg': 'JPG',
+            'image/png': 'PNG'
+        }
+        ocr_filetype = to_file_type[file_type]
+
+        image = Image.open(io.BytesIO(base64_file))
+        # new_image = image.rotate(180)
+        image.save('testimage_blahblah.jpeg', format='JPEG', quality=50, optimize=True)
+        with io.BytesIO() as output:
+            image.save(output, quality=70, optimize=True, format="JPEG")
+            contents = output.getvalue()
+        contents = base64.b64encode(contents).decode("utf-8")
+
+        # rapidapi version
+        # url = "https://ocr-supreme.p.rapidapi.com/ocr/image"
+        # payload = json.dumps({
+        #     'data': contents, 'output': 'text'
+        # })
+        # headers = {
+        #     'x-rapidapi-host': "ocr-supreme.p.rapidapi.com",
+        #     'x-rapidapi-key': "d77898db4bmsh5f47bec815d12fbp138d95jsn4947265a4033",
+        #     'content-type': "application/json",
+        #     'accept': "application/json"
+        # }
+        #
+        # response = requests.request("POST", url, data=payload, headers=headers)
+        # text = response.json()['data']
+        # print(response.text)
+
+        url = 'https://api.ocr.space/parse/image'
+        apikey = '4253b0659088957'
+        base64Image = contents
+        ocrEngine = '1'
+
+        headers = {
+            'apikey': apikey
+        }
+        payload = {
+            # 'file': file,
+            'base64image': f'data:{file_type};base64,' + base64Image,
+            'ocrEngine': ocrEngine,
+            'filetype': ocr_filetype
+        }
+
+        response = requests.request("POST", url, data=payload, headers=headers)
+        cont = response.json()
+        print(cont)
+        return ConvertImageToRecipeText(text=cont['ParsedResults'][0]['ParsedText'])
 
 
 class LinkOrCreateIngredientsForPantry(graphene.Mutation):
@@ -138,9 +255,10 @@ web        |  'tools': 'grinder'}
 '''
 
 
-
 class Mutation(object):
     add_recipe = AddRecipe.Field()
+    add_recipe_flexible = AddRecipeFlexible.Field()
     create_user = CreateUser.Field()
     add_recipes_from_text = AddRecipesFromText.Field()
     link_or_create_ingredients_for_pantry = LinkOrCreateIngredientsForPantry.Field()
+    convert_image_to_recipe_text = ConvertImageToRecipeText.Field()
