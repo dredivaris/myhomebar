@@ -34,15 +34,12 @@ class Ingredient(models.Model):
     owner = models.ForeignKey(User, on_delete=models.CASCADE)
     parent = models.ForeignKey('self', blank=True, null=True, on_delete=models.CASCADE)
     is_garnish = models.BooleanField(default=False)
+    is_generic = models.BooleanField(default=False)
 
     # objects = IngredientManager()
 
     class Meta:
         unique_together = (('name', 'owner'),)
-
-    @property
-    def is_generic(self):
-        return True if not self.parent else False
 
     def __str__(self):
         return self.name
