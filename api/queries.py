@@ -169,7 +169,11 @@ class Query(object):
     def resolve_users_pantry(self, info, id):
         # owner = User.objects.get(id=1)
         # TODO: setup login!!!
-        pantry = Pantry.objects.filter(owner_id=1).prefetch_related('pantry_ingredients').first()
-        return pantry.pantry_ingredients.filter(ingredient__is_garnish=False)
+
+        try:
+            pantry = Pantry.objects.filter(owner_id=1).prefetch_related('pantry_ingredients').first()
+            return pantry.pantry_ingredients.filter(ingredient__is_garnish=False)
+        except AttributeError:
+            return []
 
     # TODO: add pantry filter search
