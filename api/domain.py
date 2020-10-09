@@ -535,6 +535,38 @@ def _convert_to_fractional_text(number):
     else:
         return str(fraction)
 
+
+def is_only_urls(lines):
+    validator = URLValidator()
+    for line in lines:
+        try:
+            validator(line)
+        except ValidationError:
+            return False
+    return True
+
+
+def is_url_then_recipe(lines):
+    num_non_url = 0
+    first = None
+    validator = URLValidator()
+    for line in lines:
+        try:
+            validator(line)
+        except ValidationError:
+            return first
+        else:
+            if not first:
+                first = line
+            else:
+                return False
+    return False
+
+
+def clean_lines(lines):
+    return [line for line in lines if line.strip()]
+
+
 def create_recipe_from_plaintext(text):
     @dataclass
     class Recipe:
@@ -552,19 +584,27 @@ def create_recipe_from_plaintext(text):
     text = text.replace('\t', ' ')
     lines = text.split('\n')
     title_line = lines[0]
+    lines = clean_lines(lines)
 
     # parse out possible url
-    possible_url = title_line.split()[-1]
-    validator = URLValidator()
-
-    try:
-        validator(possible_url)
-    except ValidationError:
+    if is_only_urls(lines):
         pass
-    else:
-        recipe.url_link = possible_url
-        title_line = title_line.replace(possible_url, '').strip()
 
+    possible_url = is_url_then_recipe(lines)
+    if not possible_url:
+        possible_url = title_line.split()[-1]
+        validator = URLValidator()
+
+        try:
+            validator(possible_url)
+        except ValidationError:
+            pass
+        else:
+            recipe.url_link = possible_url
+            title_line = title_line.replace(possible_url, '').strip()
+    else:
+        lines.pop(0)
+        title_line = lines[0]
     # parse out possible reference
     reference = get_text_within_parens(title_line)
     if reference:
