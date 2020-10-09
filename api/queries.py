@@ -62,7 +62,7 @@ def _filter_on_pantry(current_filtered, user, allowances=0):
 
     pantry = Pantry.objects.filter(owner=user).first()
     pantry_ingredients = PantryIngredient.objects\
-        .filter(pantry=pantry, in_stock=True).select_related('ingredient')
+        .filter(pantry=pantry, in_stock=True).select_related('ingredient').order_by('-id')
     ingredients = [pi.ingredient for pi in pantry_ingredients]
 
     ids = {p.id for p in ingredients}
@@ -72,14 +72,17 @@ def _filter_on_pantry(current_filtered, user, allowances=0):
         in_pantry = True
         current_allowances = allowances
         for ingredient in recipe.recipeingredient_set.all():
-            if not ingredient.ingredient.is_garnish:
-                if ingredient.ingredient.id not in ids and ingredient.ingredient.name not in names:
-                    missing_ingredients.append(ingredient.ingredient)
-                    if not current_allowances:
-                        in_pantry = False
-                        break
-                    else:
-                        current_allowances -= 1
+            if (
+                not ingredient.ingredient.is_garnish
+                and ingredient.ingredient.id not in ids
+                and ingredient.ingredient.name not in names
+            ):
+                missing_ingredients.append(ingredient.ingredient)
+                if not current_allowances:
+                    in_pantry = False
+                    break
+                else:
+                    current_allowances -= 1
 
         # in_pantry = not any(
         #     ingredient.ingredient.id not in ids and ingredient.ingredient.name not in names
@@ -144,15 +147,15 @@ class Query(object):
         # TODO: add ability for multiple search filters via commas or semicolons
 
         if not search_term:
-            current_filtered = Recipe.objects.all().prefetch_related('ingredients')
+            current_filtered = Recipe.objects.all().prefetch_related('ingredients').order_by('-id')
         else:
             ids = Recipe.objects\
                 .annotate(search=SearchVector('name') + SearchVector('ingredients__name'))\
                 .filter(search__icontains=search_term).values_list('id', flat=True)
 
             ids = set(ids)
-            current_filtered = Recipe.objects.filter(id__in=ids).prefetch_related('ingredients')
-
+            current_filtered = Recipe.objects.filter(id__in=ids)\
+                .prefetch_related('ingredients').order_by('-id')
         if allowances != -1:
             # TODO: add auth!
             current_filtered = _filter_on_pantry(current_filtered, User.objects.first(),
