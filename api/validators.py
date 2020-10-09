@@ -1,10 +1,12 @@
+from collections import Iterable
+
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from graphql import GraphQLError
 
 from api.individual_recipe_parser import INGREDIENT_PARSER, JUICE_OF_PARSER, \
     ALTERNATIVE_UNIT_LOCATION_PARSER
-from api.models import Recipe, Ingredient, Unit, Quantity, RecipeIngredient
+from api.models import Recipe, Ingredient, Unit, Quantity, RecipeIngredient, IngredientMapping
 
 
 class RecipeValidator(object):
@@ -13,9 +15,9 @@ class RecipeValidator(object):
         self.recipe = None
 
     def validate(self):
-        print('proc ingredients')
+        # print('proc ingredients')
         self.ingredients = self.process_ingredients()
-        print('proc type')
+        # print('proc type')
         self.recipe_type = self.process_type()
         self.process_garnish()
         self.process_rating()
@@ -25,44 +27,75 @@ class RecipeValidator(object):
         self.recipe = Recipe(**self.recipe_raw)
 
         self.recipe.owner = self.user
+        # print(f'Checking dup for {self.recipe.owner}, {self.recipe.name}, {self.recipe.source} found num: {Recipe.objects.filter(owner=self.recipe.owner, name=self.recipe.name, source=self.recipe.source).count()}')
+        if Recipe.objects.filter(owner=self.recipe.owner,
+                                 name=self.recipe.name, source=self.recipe.source).count() == 0:
+            self.recipe.save()
+            for ingredient in self.ingredients:
+                self.save_and_add_ingredient(ingredient)
 
-        self.recipe.save()
+            self.save_and_add_garnish()
+        else:
+            print(f'duplicate found for {self.recipe.name}')
+
+    def update(self):
+        self.recipe_raw['name'] = self.recipe_raw['name'].title()
+        # self.recipe = Recipe(**self.recipe_raw)
+
+        recipe_id = self.recipe_raw.pop('id')
+        Recipe.objects.filter(id=recipe_id).update(**self.recipe_raw)
+        self.recipe = Recipe.objects.get(id=recipe_id)
+
+        # self.recipe.owner = self.user
+        # print(f'Checking dup for {self.recipe.owner}, {self.recipe.name}, {self.recipe.source} found num: {Recipe.objects.filter(owner=self.recipe.owner, name=self.recipe.name, source=self.recipe.source).count()}')
+        # self.recipe.save()
+        RecipeIngredient.objects.filter(beverage=self.recipe).delete()
+
         for ingredient in self.ingredients:
             self.save_and_add_ingredient(ingredient)
-
-        self.save_and_add_garnish()
+        self.save_and_add_garnish(update=True)
 
     def with_user(self, user):
         self.user = user
 
     def process_ingredients(self):
-        ingredient_text = self.recipe_raw['ingredients']
         ingredients = []
-        ingredients_raw = ingredient_text.splitlines()
+        if isinstance(self.recipe_raw['ingredients'], Iterable) \
+                and type(self.recipe_raw['ingredients']) is not str:
+            ingredients_raw = self.recipe_raw['ingredients']
+        else:
+            ingredient_text = self.recipe_raw['ingredients']
+            ingredients_raw = ingredient_text.splitlines()
 
         for raw_ingredient in ingredients_raw:
-            cleaned_text = raw_ingredient.strip()
-
-            match = INGREDIENT_PARSER.match(cleaned_text)
-            if not match:
-                match = JUICE_OF_PARSER.match(cleaned_text)
-                if not match:
-                    raise ValidationError('Could not match ingredient')
-                ingredient = {
-                    'amount': match.group(1),
-                    'ingredient': match.group(2) + ' juice',
-                }
-                match = ALTERNATIVE_UNIT_LOCATION_PARSER.match(cleaned_text)
-                if match:
-                    ingredient['amount'] = match.group(1)
-                    ingredient['unit'] = match.group(2)
+            if type(raw_ingredient) is dict:
+                ingredients.append(raw_ingredient)
             else:
-                ingredient = {
-                    'amount': match.group(1),
-                    'unit': match.group(5),
-                    'ingredient': match.group(6).strip(),
-                }
-            ingredients.append(ingredient)
+                cleaned_text = raw_ingredient.strip()
+
+                match = INGREDIENT_PARSER.match(cleaned_text)
+                if not match:
+                    match = JUICE_OF_PARSER.match(cleaned_text)
+                    if not match:
+                        ingredient = {
+                            'ingredient': cleaned_text
+                        }
+                    else:
+                        ingredient = {
+                            'amount': match.group(1),
+                            'ingredient': match.group(2) + ' juice',
+                        }
+                    match = ALTERNATIVE_UNIT_LOCATION_PARSER.match(cleaned_text)
+                    if match:
+                        ingredient['amount'] = match.group(1)
+                        ingredient['unit'] = match.group(2)
+                else:
+                    ingredient = {
+                        'amount': match.group(1),
+                        'unit': match.group(7),
+                        'ingredient': match.group(8).strip(),
+                    }
+                ingredients.append(ingredient)
 
         self.recipe_raw.pop('ingredients')
         return ingredients
@@ -80,43 +113,72 @@ class RecipeValidator(object):
             garnish = self.recipe_raw['garnish'].strip()
         except KeyError:
             return
+        except AttributeError:
+            return
         if garnish:
             self.garnish = garnish
         self.recipe_raw.pop('garnish')
 
     def process_rating(self):
-        if not self.recipe_raw['rating_set']:
-            self.recipe_raw.pop('rating')
-        self.recipe_raw.pop('rating_set')
+        if not self.recipe_raw.get('rating_set'):
+            self.rating = self.recipe_raw.get('rating', None)
+        # TODO: is this right?
+        self.recipe_raw.pop('rating_set', None)
 
     def save_and_add_ingredient(self, ingredient):
-        # todo: change owner to current owner
-        unit, _ = Unit.objects.get_or_create(name=ingredient['unit'].lower(),
-                                             owner=User.objects.get(username='root'))
-        print('print 6')
-
-        quantity = Quantity.create_quantity(ingredient['amount'], unit=unit)
-        print('print 7')
-
-        ingredient, _ = Ingredient.objects.get_or_create(
-            name=ingredient['ingredient'].title(), owner=User.objects.get(username='root'))
-        print('print 8')
-        RecipeIngredient.objects.create(
+        # todo: change owner to current owner; think this is already true?
+        unit = None
+        print(f'creating for ingredient {ingredient}, {ingredient.get("unit", None)}')
+        if ingredient.get('unit', None):
+            _type = ingredient.get('type', None)
+            unit, _ = Unit.objects.get_or_create(name=ingredient['unit'].lower(), owner=self.user)
+            if not unit.type and _type:
+                unit.type = _type
+                unit.save()
+        try:
+            print(f'  with quantity {ingredient["amount"]} and unit: {unit}')
+            quantity = Quantity.create_quantity(ingredient['amount'], unit=unit)
+        except KeyError:
+            print('  hit key error creating quantity')
+            quantity = None
+        try:
+            ingredient, _ = Ingredient.objects.get_or_create(
+                name=ingredient['ingredient'].title(), owner=self.user)
+        except Exception as e:
+            breakpoint()
+        ri = RecipeIngredient(
             ingredient=ingredient,
             beverage=self.recipe,
-            quantity=quantity
         )
 
-    def save_and_add_garnish(self):
+        ri.quantity = quantity if quantity else None
+        ri.save()
+
+    def save_and_add_garnish(self, update=False):
+        # TODO: figure out why this triggers a duplicate integrity error
+
         if hasattr(self, 'garnish') and self.garnish:
-            ingredient, created = Ingredient.objects.get_or_create(
-                name=self.garnish.title(),
-                owner=User.objects.get(username='root'),
-                defaults={'is_garnish': True})
+            created = False
+            self.garnish = self.garnish.lower().replace('garnish:', '').strip()
+            try:
+                # ingredient = Ingredient.objects.get(name=IngredientMapping.map(self.garnish.title()).title(), owner=self.user.id)
+                ingredient = Ingredient.objects.get(name=self.garnish.title(), owner=self.user.id)
+            except Ingredient.DoesNotExist:
+                ingredient = Ingredient.objects.create(name=self.garnish.title(), owner_id=self.user.id, is_garnish=True)
+                created = True
+
             if not created and not ingredient.is_garnish:
-                raise GraphQLError('Garnish already exists as non-garnish ingredient')
-            RecipeIngredient.objects.create(
-                ingredient=ingredient,
-                beverage=self.recipe,
-                quantity=Quantity.objects.get_or_create(amount=1, unit=None)[0]
-            )
+                ri = RecipeIngredient(
+                    ingredient=ingredient,
+                    beverage=self.recipe,
+                )
+                ri.save()
+            try:
+                RecipeIngredient.objects.create(
+                    ingredient=ingredient,
+                    beverage=self.recipe,
+                    quantity=Quantity.objects.get_or_create(amount=1, divisor=None, unit=None)[0]
+                )
+            except:
+                import pdb
+                pdb.set_trace()
