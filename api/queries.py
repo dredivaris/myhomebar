@@ -1,5 +1,6 @@
 import graphene
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import User
 from django.contrib.postgres.search import SearchVector
 from django.db.models import Prefetch
 
@@ -31,17 +32,65 @@ class RecipeType(DjangoObjectType):
     ingredients_text = graphene.String()
 
     def resolve_ingredients_text(self, info):
-        return ', '.join(i.name for i in self.ingredients.all() if not i.is_garnish)
+        missing = set()
+        if hasattr(self, 'missing_ingredient_models'):
+            missing = {m.name for m in self.missing_ingredient_models}
+        return ', '.join(i.name for i in self.ingredients.all()
+                         if not i.is_garnish and i.name not in missing)
 
     garnishes = graphene.List(graphene.String)
 
     def resolve_garnishes(self, info):
         return [i for i in self.recipeingredient_set.all() if i.ingredient.is_garnish]
 
+    missing_ingredients = graphene.String()
+
+    def resolve_missing_ingredients(self, info):
+        if not hasattr(self, 'missing_ingredient_models'):
+            return None
+        else:
+            return ', '.join(ingredient.name for ingredient in self.missing_ingredient_models)
+
 
 class PantryIngredientType(DjangoObjectType):
     class Meta:
         model = PantryIngredient
+
+
+def _filter_on_pantry(current_filtered, user, allowances=0):
+    filtered = []
+
+    pantry = Pantry.objects.filter(owner=user).first()
+    pantry_ingredients = PantryIngredient.objects\
+        .filter(pantry=pantry, in_stock=True).select_related('ingredient')
+    ingredients = [pi.ingredient for pi in pantry_ingredients]
+
+    ids = {p.id for p in ingredients}
+    names = [p.name for p in ingredients]
+    for recipe in current_filtered:
+        missing_ingredients = []
+        in_pantry = True
+        current_allowances = allowances
+        for ingredient in recipe.recipeingredient_set.all():
+            if not ingredient.ingredient.is_garnish:
+                if ingredient.ingredient.id not in ids and ingredient.ingredient.name not in names:
+                    missing_ingredients.append(ingredient.ingredient)
+                    if not current_allowances:
+                        in_pantry = False
+                        break
+                    else:
+                        current_allowances -= 1
+
+        # in_pantry = not any(
+        #     ingredient.ingredient.id not in ids and ingredient.ingredient.name not in names
+        #     for ingredient in recipe.recipeingredient_set.all()
+        #     if not ingredient.ingredient.is_garnish
+        # )
+        if missing_ingredients:
+            recipe.missing_ingredient_models = missing_ingredients
+        if in_pantry:
+            filtered.append(recipe)
+    return filtered
 
 
 class Query(object):
@@ -87,19 +136,28 @@ class Query(object):
     def resolve_users_recipe(self, info, id):
         return Recipe.objects.get(pk=id)
 
-    searched_recipes = graphene.List(RecipeType, search_term=graphene.String(required=False))
+    searched_recipes = graphene.List(RecipeType,
+                                     search_term=graphene.String(required=False),
+                                     allowances=graphene.Int(required=False))
 
-    def resolve_searched_recipes(self, info, search_term=None):
+    def resolve_searched_recipes(self, info, search_term=None, allowances=0):
         # TODO: add ability for multiple search filters via commas or semicolons
+
         if not search_term:
-            return Recipe.objects.all().prefetch_related('ingredients')
+            current_filtered = Recipe.objects.all().prefetch_related('ingredients')
+        else:
+            ids = Recipe.objects\
+                .annotate(search=SearchVector('name') + SearchVector('ingredients__name'))\
+                .filter(search__icontains=search_term).values_list('id', flat=True)
 
-        ids = Recipe.objects\
-            .annotate(search=SearchVector('name') + SearchVector('ingredients__name'))\
-            .filter(search__icontains=search_term).values_list('id', flat=True)
+            ids = set(ids)
+            current_filtered = Recipe.objects.filter(id__in=ids).prefetch_related('ingredients')
 
-        ids = set(ids)
-        return Recipe.objects.filter(id__in=ids).prefetch_related('ingredients')
+        if allowances != -1:
+            # TODO: add auth!
+            current_filtered = _filter_on_pantry(current_filtered, User.objects.first(),
+                                                 allowances=allowances)
+        return current_filtered
 
     recipe = graphene.Field(RecipeType, recipe_id=graphene.Int(required=True))
 
