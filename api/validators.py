@@ -151,7 +151,7 @@ class RecipeValidator(object):
             beverage=self.recipe,
         )
 
-        ri.quantity = quantity if quantity else None
+        ri.quantity = quantity or None
         ri.save()
 
     def save_and_add_garnish(self, update=False):
