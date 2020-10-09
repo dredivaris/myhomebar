@@ -1,6 +1,7 @@
 import math
 from collections import Counter
 from dataclasses import dataclass
+from decimal import Decimal
 from fractions import Fraction
 
 import nltk
@@ -384,7 +385,6 @@ def remove_all_text_in_parens(text):
 
 
 def is_directions_classifier(text):
-    print('text is: ', text)
     text = clean(text)
     tokenizer = nltk.data.load('tokenizers/punkt/english.pickle')
     lines = tokenizer.tokenize(text)
@@ -566,6 +566,29 @@ def is_url_then_recipe(lines):
 def clean_lines(lines):
     return [line for line in lines if line.strip()]
 
+def convert_old_to_new_rating(rating):
+    rating = Decimal(rating)
+    if rating < Decimal('3'):
+        return '1'
+    elif rating < Decimal('3.8'):
+        return '2'
+    elif Decimal('3.8') <= rating < Decimal('4'):
+        return '2.5'
+    elif rating == Decimal('4'):
+        return '3'
+    elif Decimal('4') < rating < Decimal('4.4'):
+        return '3.5'
+    elif rating == Decimal('4.4'):
+        return '3.5'
+    elif rating == Decimal('4.5'):
+        return '4'
+    elif Decimal('4.5') < rating < Decimal('4.8'):
+        return '4.5'
+    elif Decimal('4.8') <= rating <= Decimal('5'):
+        return '5'
+    else:
+        return rating
+
 
 def create_recipe_from_plaintext(text):
     @dataclass
@@ -616,6 +639,7 @@ def create_recipe_from_plaintext(text):
     if is_number(title_line.split()[0]):
        title_tokens = title_line.split()
        recipe.rating = title_tokens[0]
+       recipe.rating = convert_old_to_new_rating(recipe.rating)
        recipe.title = ' '.join(title_tokens[1:])
     else:
         recipe.title = title_line
@@ -661,6 +685,18 @@ def create_recipe_from_plaintext(text):
     directions = '\n'.join(directions)
 
     recipe.directions = directions
+    if (not recipe.garnish and any(text in recipe.directions.lower()
+                                   for text in ['garnish:', 'garnish with'])):
+        directions = recipe.directions
+        directions = directions.lower()
+        text_to_find = None
+        if 'garnish:' in directions:
+            text_to_find = 'garnish:'
+        elif 'garnish with' in directions:
+            text_to_find = 'garnish with'
+
+        if text_to_find:
+            recipe.garnish = directions[directions.find(text_to_find) + len(text_to_find):].strip()
     return recipe
 
 
@@ -679,12 +715,15 @@ def save_recipe_from_parsed_recipes(parsed):
 
     def convert_ingredient(ingredient):
         return {
-            'unit': ingredient['quantity'][0]['unit'],
-            'type': ingredient['quantity'][0]['unit_type'],
+            'unit': ingredient['quantity'][0]['unit']
+                if ingredient['quantity'] and ingredient['quantity'][0]['unit'] else None,
+            'type': ingredient['quantity'][0]['unit_type']
+                if ingredient['quantity'] and ingredient['quantity'][0]['unit_type'] else None,
             'amount': ingredient['quantity'][0]['amount']
-            if ingredient['quantity'] and ingredient['quantity'][0]['amount'] else None,
+                if ingredient['quantity'] and ingredient['quantity'][0]['amount'] else None,
             'ingredient': ingredient['ingredient']
         }
+
     recipe = {
         'name': parsed.title,
         'source_url': parsed.url_link,
@@ -697,6 +736,8 @@ def save_recipe_from_parsed_recipes(parsed):
         'ingredients': [convert_ingredient(i) for i in parsed.ingredients],
         'recipe_type': Recipe.COCKTAIL,
     }
+    if not parsed.rating:
+        del recipe['rating']
     recipe_validator = RecipeValidator(**recipe)
     recipe_validator.with_user(User.objects.first())  # TODO: for now
     recipe_validator.validate()
