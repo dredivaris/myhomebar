@@ -1,7 +1,7 @@
 import graphene
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import User
-from django.contrib.postgres.search import SearchVector
+from django.contrib.postgres.search import SearchVector, SearchQuery
 from django.db.models import Prefetch
 
 from graphene_django.types import DjangoObjectType
@@ -146,15 +146,34 @@ class Query(object):
 
     def resolve_searched_recipes(self, info, search_term=None, allowances=0, shortlist=False):
         # TODO: add ability for multiple search filters via commas or semicolons
-
+        vectors = SearchVector('name') + SearchVector('ingredients__name')
         if not search_term:
             current_filtered = Recipe.objects.all().prefetch_related('ingredients').order_by('-id')
         else:
             ids = Recipe.objects\
-                .annotate(search=SearchVector('name') + SearchVector('ingredients__name'))\
+                .annotate(search=vectors)\
                 .filter(search__icontains=search_term).values_list('id', flat=True)
 
-            ids = set(ids)
+            search_terms = search_term.split()
+            # if we want to filter on individual terms using OR
+            # my_filter = search_term
+            # if search_terms:
+            #     my_filter = SearchQuery(search_terms.pop())
+            #     for t in search_terms:
+            #         my_filter &= SearchQuery(t)
+
+            extra_ids = []
+            for term in search_terms:
+                extra = Recipe.objects.annotate(search=vectors)\
+                    .filter(search__icontains=term).values_list('id', flat=True)
+                extra_ids += extra
+
+            final_ids = Recipe.objects\
+                .annotate(search=SearchVector('name') + SearchVector('ingredients__name'))\
+                .filter(search=SearchQuery(search_term)).values_list('id', flat=True)
+
+            print(f'ids {ids}, second ids {extra_ids}, final_ids {final_ids}')
+            ids = set(ids) | set(extra_ids) | set(final_ids)
             current_filtered = Recipe.objects.filter(id__in=ids)\
                 .prefetch_related('ingredients').order_by('-id')
         if shortlist:
@@ -183,3 +202,9 @@ class Query(object):
             return []
 
     # TODO: add pantry filter search
+
+    filtered_ingredients = graphene.List(IngredientType,
+                                         is_garnish=graphene.Boolean(required=False))
+
+    def resolve_filtered_ingredients(self, info, is_garnish=False):
+        return Ingredient.objects.filter(is_garnish=is_garnish)
