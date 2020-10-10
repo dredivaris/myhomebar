@@ -111,6 +111,8 @@ class Quantity(models.Model):
 
     @classmethod
     def create_quantity(cls, quantity, unit):
+        if not quantity:
+            return None
         if type(quantity) is int:
             result, _ = cls.objects.get_or_create(amount=quantity, divisor=None, unit=unit)
             return result
