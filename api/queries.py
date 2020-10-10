@@ -141,9 +141,10 @@ class Query(object):
 
     searched_recipes = graphene.List(RecipeType,
                                      search_term=graphene.String(required=False),
-                                     allowances=graphene.Int(required=False))
+                                     allowances=graphene.Int(required=False),
+                                     shortlist=graphene.Boolean(required=False))
 
-    def resolve_searched_recipes(self, info, search_term=None, allowances=0):
+    def resolve_searched_recipes(self, info, search_term=None, allowances=0, shortlist=False):
         # TODO: add ability for multiple search filters via commas or semicolons
 
         if not search_term:
@@ -156,6 +157,8 @@ class Query(object):
             ids = set(ids)
             current_filtered = Recipe.objects.filter(id__in=ids)\
                 .prefetch_related('ingredients').order_by('-id')
+        if shortlist:
+            current_filtered = current_filtered.filter(shortlist=True)
         if allowances != -1:
             # TODO: add auth!
             current_filtered = _filter_on_pantry(current_filtered, User.objects.first(),
