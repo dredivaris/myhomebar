@@ -61,6 +61,7 @@ class AddRecipeFlexible(graphene.Mutation):
         notes = graphene.String()
         source = graphene.String()
         source_url = graphene.String()
+        shortlist = graphene.Boolean()
 
     Output = AddRecipeFlexibleResponseGraphql
 
@@ -72,7 +73,7 @@ class AddRecipeFlexible(graphene.Mutation):
         for argument, value in args.items():
             if type(value) is str:
                 value = value.strip()
-            if not value:
+            if not value and type(value) is not bool:
                 args_to_del.append(argument)
 
         for arg in args_to_del:
