@@ -83,6 +83,10 @@ class Recipe(models.Model):
     date_added = models.DateTimeField(auto_now=True)
     date_modified = models.DateTimeField(auto_now=True)
 
+    # TODO: when supporting multiple users this field may need to go on a user specific model
+    # will probably want something equivalent to a user pantry (recipe book) to hold recipes
+    shortlist = models.BooleanField(default=False)
+
     def __str__(self):
         return self.name
 
