@@ -27,7 +27,8 @@ SECRET_KEY = 'n#0r*@s6ldherb68th2g2n5rk252h+)-oht2sn9ln0qy&srjso'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['0.0.0.0', 'localhost']
+# ALLOWED_HOSTS = ['0.0.0.0', 'localhost', '54.153.99.29']
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
@@ -39,6 +40,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.postgres',
     'django_extensions',
     'api',
     'graphene_django',
@@ -167,5 +169,6 @@ QUERYCOUNT = {
     'RESPONSE_HEADER': 'X-DjangoQueryCount-Count'
 }
 
+DATA_UPLOAD_MAX_MEMORY_SIZE = 2621440 * 20
 
 from  django.core.handlers.wsgi import WSGIRequest
