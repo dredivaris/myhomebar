@@ -32,7 +32,8 @@ class MyFraction(Fraction):
 class Ingredient(models.Model):
     name = models.CharField(max_length=1000)
     owner = models.ForeignKey(User, on_delete=models.CASCADE)
-    parent = models.ForeignKey('self', blank=True, null=True, on_delete=models.CASCADE)
+    categories = models.ManyToManyField('self', blank=True, null=True, symmetrical=False,
+                                        through='api.IngredientToIngredient')
     is_garnish = models.BooleanField(default=False)
     is_generic = models.BooleanField(default=False)
 
@@ -50,6 +51,11 @@ class Ingredient(models.Model):
 
         self.name = self.name.title()
         super().save(*args, **kwargs)
+
+
+class IngredientToIngredient(models.Model):
+    parent = models.ForeignKey(Ingredient, on_delete=models.CASCADE, related_name='child')
+    child = models.ForeignKey(Ingredient, on_delete=models.CASCADE, related_name='parent')
 
 
 class Recipe(models.Model):
@@ -246,15 +252,7 @@ class PantryIngredient(models.Model):
     in_stock = models.BooleanField(default=True)
 
     def __str__(self):
-        if self.quantity:
-            if (
-                self.quantity.is_integer()
-                and self.quantity.amount == 1
-                and self.ingredient.name[0].isdigit()
-            ):
-                return self.ingredient.name
-            return f'{self.quantity} {self.ingredient.name}'
-        return self.ingredient.name
+        return f'{"✓" if self.in_stock else "✗"} {self.ingredient.name} - {self.id}'
 
 
 class IngredientMapping(models.Model):
