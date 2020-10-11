@@ -3,16 +3,43 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import User
 from django.contrib.postgres.search import SearchVector, SearchQuery
 from django.db.models import Prefetch
+from graphene import ObjectType
 
 from graphene_django.types import DjangoObjectType
 
-from api.models import Ingredient, Recipe, RecipeIngredient, PantryIngredient, Pantry
+from api.models import Ingredient, Recipe, RecipeIngredient, PantryIngredient, Pantry, \
+    IngredientToIngredient
 from api.mutations import UserType
+
+
+class SimpleIngredientType(ObjectType):
+    id = graphene.Int()
+    name = graphene.String()
 
 
 class IngredientType(DjangoObjectType):
     class Meta:
         model = Ingredient
+
+    categories_list = graphene.String()
+
+    def resolve_categories_list(self, info):
+        categories = [i.parent.name for i in IngredientToIngredient.objects.filter(
+            child_id=self.id).prefetch_related('parent')]
+
+        # categories = [cat.name for cat in ]
+        # categories = [cat.name for cat in self.categories.all()]
+        return ', '.join(categories)
+
+    categories = graphene.List(SimpleIngredientType)
+
+    def resolve_categories(self, info):
+        parents = [i.parent for i in IngredientToIngredient.objects.filter(
+            child_id=self.id).prefetch_related('parent')]
+        return [{
+            'id': parent.id,
+            'name': parent.name
+        } for parent in parents]
 
 
 class RecipeIngredientType(DjangoObjectType):
@@ -101,6 +128,11 @@ class Query(object):
 
     def resolve_all_ingredients(self, info, **kwargs):
         return Ingredient.objects.all()
+
+    all_ingredients_not_garnish = graphene.List(IngredientType)
+
+    def resolve_all_ingredients_not_garnish(self, info, **kwargs):
+        return Ingredient.objects.filter(is_garnish=False)
 
     users = graphene.List(UserType)
 
@@ -204,7 +236,18 @@ class Query(object):
     # TODO: add pantry filter search
 
     filtered_ingredients = graphene.List(IngredientType,
-                                         is_garnish=graphene.Boolean(required=False))
+                                         is_garnish=graphene.Boolean(required=False),
+                                         search_term=graphene.String(required=False))
 
-    def resolve_filtered_ingredients(self, info, is_garnish=False):
-        return Ingredient.objects.filter(is_garnish=is_garnish)
+    def resolve_filtered_ingredients(self, info, is_garnish=False, search_term=None):
+        if search_term is None:
+            return Ingredient.objects.filter(is_garnish=is_garnish)
+
+        filtered = Ingredient.objects.filter(is_garnish=is_garnish)
+        filtered = filtered.filter(name__icontains=search_term)
+        return filtered
+
+    get_ingredient = graphene.Field(IngredientType, id=graphene.Int(required=True))
+
+    def resolve_get_ingredient(self, info, id):
+        return Ingredient.objects.get(id=id)
