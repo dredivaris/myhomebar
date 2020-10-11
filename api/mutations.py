@@ -11,10 +11,11 @@ from graphene_file_upload.scalars import Upload
 
 from api.domain import create_recipe, create_recipe_from_plaintext, save_recipe_from_parsed_recipes, \
     tokenize_recipes_from_plaintext, update_recipe, merge_ingredients_and_update_models
-from api.models import Pantry, Ingredient, PantryIngredient
+from api.models import Pantry, Ingredient, PantryIngredient, IngredientToIngredient
 from api.types import AddRecipeResponseGraphql, AddRecipesFromTextResponseGraphql, \
     LinkOrCreateIngredientsForPantryResponseGraphql, AddRecipeFlexibleResponseGraphql, \
-    IngredientBulkUpdateResponseGraphql, IngredientCreateResponseGraphql, ToggleStockResponseGraphql
+    IngredientBulkUpdateResponseGraphql, IngredientCreateResponseGraphql, \
+    ToggleStockResponseGraphql, EditIngredientFlexibleResponseGraphql
 
 from django.contrib.auth import get_user_model
 
@@ -281,18 +282,16 @@ class IngredientCreate(graphene.Mutation):
     class Arguments:
         name = graphene.String(required=True)
         is_garnish = graphene.Boolean(required=True)
-        parent_id = graphene.Int(required=False)
         add_to_pantry = graphene.Boolean(required=False)
 
     Output = IngredientCreateResponseGraphql
 
-    def mutate(self, info, name, is_garnish, parent_id=None, add_to_pantry=False):
+    def mutate(self, info, name, is_garnish, add_to_pantry=False):
         if Ingredient.objects.filter(name=name).count():
             return IngredientCreateResponseGraphql(created=False)
 
         # TODO: handle auth
         ingredient = Ingredient.objects.create(name=name.title(),
-                                               parent_id=parent_id,
                                                is_garnish=is_garnish,
                                                owner=User.objects.first())
         if add_to_pantry:
@@ -316,6 +315,50 @@ class ToggleStock(graphene.Mutation):
         return ToggleStockResponseGraphql(toggled_to=pi.in_stock)
 
 
+class EditIngredientFlexible(graphene.Mutation):
+    class Arguments:
+        id = graphene.Int(required=True)
+        name = graphene.String(required=True)
+        categories = graphene.List(graphene.String, required=True)
+        is_garnish = graphene.Boolean()
+        is_generic = graphene.Boolean()
+        add_to_pantry = graphene.Boolean()
+
+    Output = EditIngredientFlexibleResponseGraphql
+
+    def mutate(self, info, id, name, categories,
+               is_garnish=None, is_generic=None, add_to_pantry=None):
+
+        owner = User.objects.first()  # todo: add auth
+        ingredient = Ingredient.objects.get(id=id)
+        ingredient.name = name
+        if is_garnish is not None:
+            ingredient.is_garnish = is_garnish
+        if is_generic is not None:
+            ingredient.is_generic = is_generic
+
+        ingredient.save()
+
+        if add_to_pantry:
+            try:
+                PantryIngredient.objects.get(ingredient=ingredient, pantry__owner=owner)
+            except PantryIngredient.DoesNotExist:
+                PantryIngredient.objects.create(
+                    ingredient=ingredient, pantry__owner=owner, in_stock=True)
+
+        categories = [int(c) for c in categories if c]
+        existings = IngredientToIngredient.objects.filter(child=ingredient)
+        for existing in existings:
+            if existing.parent_id not in categories:
+                existing.delete()
+
+        if categories:
+            for category in categories:
+                IngredientToIngredient.objects.get_or_create(child=ingredient, parent_id=category)
+
+        return EditIngredientFlexibleResponseGraphql(True)
+
+
 class Mutation(object):
     add_recipe = AddRecipe.Field()
     add_recipe_flexible = AddRecipeFlexible.Field()
@@ -326,3 +369,4 @@ class Mutation(object):
     ingredient_bulk_update = IngredientBulkUpdate.Field()
     create_ingredient = IngredientCreate.Field()
     toggle_stock = ToggleStock.Field()
+    edit_ingredient_flexible = EditIngredientFlexible.Field()
