@@ -2,6 +2,7 @@ import json
 
 import graphene
 import requests
+from django.db import IntegrityError
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
@@ -9,10 +10,11 @@ from django.core.validators import URLValidator
 from graphene_file_upload.scalars import Upload
 
 from api.domain import create_recipe, create_recipe_from_plaintext, save_recipe_from_parsed_recipes, \
-    tokenize_recipes_from_plaintext, update_recipe
+    tokenize_recipes_from_plaintext, update_recipe, merge_ingredients_and_update_models
 from api.models import Pantry, Ingredient, PantryIngredient
 from api.types import AddRecipeResponseGraphql, AddRecipesFromTextResponseGraphql, \
-    LinkOrCreateIngredientsForPantryResponseGraphql, AddRecipeFlexibleResponseGraphql
+    LinkOrCreateIngredientsForPantryResponseGraphql, AddRecipeFlexibleResponseGraphql, \
+    IngredientBulkUpdateResponseGraphql
 
 from django.contrib.auth import get_user_model
 
@@ -256,6 +258,25 @@ web        |  'tools': 'grinder'}
 '''
 
 
+class IngredientBulkUpdate(graphene.Mutation):
+    class Arguments:
+        ids = graphene.List(graphene.Int)
+        names = graphene.List(graphene.String)
+
+    Output = IngredientBulkUpdateResponseGraphql
+
+    def mutate(self, info, ids, names):
+        if len(names) != len(ids):
+            return IngredientBulkUpdateResponseGraphql(count=0)
+        counts = 0
+        for _id, name in zip(ids, names):
+            try:
+                counts += Ingredient.objects.filter(id=_id).update(name=name)
+            except IntegrityError:
+                merge_ingredients_and_update_models(_id, name)
+        return IngredientBulkUpdateResponseGraphql(count=counts)
+
+
 class Mutation(object):
     add_recipe = AddRecipe.Field()
     add_recipe_flexible = AddRecipeFlexible.Field()
@@ -263,3 +284,4 @@ class Mutation(object):
     add_recipes_from_text = AddRecipesFromText.Field()
     link_or_create_ingredients_for_pantry = LinkOrCreateIngredientsForPantry.Field()
     convert_image_to_recipe_text = ConvertImageToRecipeText.Field()
+    ingredient_bulk_update = IngredientBulkUpdate.Field()

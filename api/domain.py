@@ -12,7 +12,7 @@ from ingreedypy import Ingreedy as BaseIngreedy
 from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
 
-from api.models import Recipe
+from api.models import Recipe, Ingredient, RecipeIngredient, PantryIngredient
 from api.validators import RecipeValidator
 
 custom_ingredient_grammar = Grammar(
@@ -743,3 +743,17 @@ def save_recipe_from_parsed_recipes(parsed):
     recipe_validator.validate()
     recipe_validator.save()
     return recipe_validator.recipe.id
+
+
+def merge_ingredients_and_update_models(_id, name):
+    # TODO: update to handle multiple users / auth
+    existing = Ingredient.objects.get(name=name, owner=User.objects.first())
+
+    ingredient_to_remove = Ingredient.objects.get(id=_id)
+    recipe_ingredients_to_change = RecipeIngredient.objects.filter(ingredient=ingredient_to_remove)
+    pantry_ingredients_to_change = PantryIngredient.objects.filter(ingredient=ingredient_to_remove)
+
+    recipe_count = recipe_ingredients_to_change.update(ingredient=existing)
+    pantry_count = pantry_ingredients_to_change.update(ingredient=existing)
+    print(f'updated {recipe_count} recipe ingredients and {pantry_count} pantry ingredients')
+    ingredient_to_remove.delete()
