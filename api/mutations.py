@@ -14,7 +14,7 @@ from api.domain import create_recipe, create_recipe_from_plaintext, save_recipe_
 from api.models import Pantry, Ingredient, PantryIngredient
 from api.types import AddRecipeResponseGraphql, AddRecipesFromTextResponseGraphql, \
     LinkOrCreateIngredientsForPantryResponseGraphql, AddRecipeFlexibleResponseGraphql, \
-    IngredientBulkUpdateResponseGraphql
+    IngredientBulkUpdateResponseGraphql, IngredientCreateResponseGraphql, ToggleStockResponseGraphql
 
 from django.contrib.auth import get_user_model
 
@@ -277,6 +277,45 @@ class IngredientBulkUpdate(graphene.Mutation):
         return IngredientBulkUpdateResponseGraphql(count=counts)
 
 
+class IngredientCreate(graphene.Mutation):
+    class Arguments:
+        name = graphene.String(required=True)
+        is_garnish = graphene.Boolean(required=True)
+        parent_id = graphene.Int(required=False)
+        add_to_pantry = graphene.Boolean(required=False)
+
+    Output = IngredientCreateResponseGraphql
+
+    def mutate(self, info, name, is_garnish, parent_id=None, add_to_pantry=False):
+        if Ingredient.objects.filter(name=name).count():
+            return IngredientCreateResponseGraphql(created=False)
+
+        # TODO: handle auth
+        ingredient = Ingredient.objects.create(name=name.title(),
+                                               parent_id=parent_id,
+                                               is_garnish=is_garnish,
+                                               owner=User.objects.first())
+        if add_to_pantry:
+            # TODO: add auth
+            pantry = Pantry.objects.get(owner=User.objects.first())
+            PantryIngredient.objects.create(pantry=pantry, ingredient=ingredient)
+        return IngredientCreateResponseGraphql(created=True)
+
+
+class ToggleStock(graphene.Mutation):
+    class Arguments:
+        id = graphene.Int(required=True)
+
+    Output = ToggleStockResponseGraphql
+
+    def mutate(self, info, id):
+        # TODO: add auth
+        pi = PantryIngredient.objects.get(id=id)
+        pi.in_stock = not pi.in_stock
+        pi.save()
+        return ToggleStockResponseGraphql(toggled_to=pi.in_stock)
+
+
 class Mutation(object):
     add_recipe = AddRecipe.Field()
     add_recipe_flexible = AddRecipeFlexible.Field()
@@ -285,3 +324,5 @@ class Mutation(object):
     link_or_create_ingredients_for_pantry = LinkOrCreateIngredientsForPantry.Field()
     convert_image_to_recipe_text = ConvertImageToRecipeText.Field()
     ingredient_bulk_update = IngredientBulkUpdate.Field()
+    create_ingredient = IngredientCreate.Field()
+    toggle_stock = ToggleStock.Field()
