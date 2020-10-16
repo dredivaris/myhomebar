@@ -1,4 +1,8 @@
+import re
 import graphene
+
+from collections import Counter
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import User
 from django.contrib.postgres.search import SearchVector, SearchQuery
@@ -177,14 +181,42 @@ class Query(object):
                                      shortlist=graphene.Boolean(required=False))
 
     def resolve_searched_recipes(self, info, search_term=None, allowances=0, shortlist=False):
+        print(search_term)
         # TODO: add ability for multiple search filters via commas or semicolons
+        def get_in_quotes_and_whats_left(text):
+            found = re.findall('"([^"]*)"', text)
+            left = re.sub('"([^"]*)"', '', text)
+            return found, left
+
         vectors = SearchVector('name') + SearchVector('ingredients__name')
+        exact_ids = None
         if not search_term:
             current_filtered = Recipe.objects.all().prefetch_related('ingredients').order_by('-id')
         else:
-            ids = Recipe.objects\
-                .annotate(search=vectors)\
-                .filter(search__icontains=search_term).values_list('id', flat=True)
+            recipes = Recipe.objects.all()
+
+            if '"' in search_term:
+                if Counter(search_term)['"'] % 2 != 0:
+                    return None
+
+                exact_matches, non_exact = get_in_quotes_and_whats_left(search_term)
+                search_term = non_exact.strip()
+                if exact_matches:
+                    exact_ids = set()
+                    for match in exact_matches:
+                        recipes = Recipe.objects.all()
+                        if exact_ids:
+                            recipes.filter(id__in=exact_ids)
+                        recipes = recipes.annotate(search=SearchVector('ingredients__name'))\
+                            .filter(search=SearchQuery(match, search_type='phrase'))
+                        if exact_ids:
+                            exact_ids = exact_ids & set(recipes.values_list('id', flat=True))
+                        else:
+                            exact_ids = set(recipes.values_list('id', flat=True))
+
+            ids = recipes.annotate(search=vectors)\
+                .filter(search__icontains=search_term)\
+                .values_list('id', flat=True)
 
             search_terms = search_term.split()
             # if we want to filter on individual terms using OR
@@ -204,8 +236,9 @@ class Query(object):
                 .annotate(search=SearchVector('name') + SearchVector('ingredients__name'))\
                 .filter(search=SearchQuery(search_term)).values_list('id', flat=True)
 
-            print(f'ids {ids}, second ids {extra_ids}, final_ids {final_ids}')
             ids = set(ids) | set(extra_ids) | set(final_ids)
+            if exact_ids:
+                ids = ids & exact_ids
             current_filtered = Recipe.objects.filter(id__in=ids)\
                 .prefetch_related('ingredients').order_by('-id')
         if shortlist:
