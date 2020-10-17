@@ -6,317 +6,13 @@ from fractions import Fraction
 
 import nltk
 from django.contrib.auth.models import User
-from parsimonious.grammar import Grammar
-from ingreedypy import Ingreedy as BaseIngreedy
 
 from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
 
+from api.general.core import Ingreedy
 from api.models import Recipe, Ingredient, RecipeIngredient, PantryIngredient
 from api.validators import RecipeValidator
-
-custom_ingredient_grammar = Grammar(
-        """
-        ingredient_addition = multipart_quantity alternative_quantity? break? ingredient
-
-        multipart_quantity
-        = (quantity_fragment break?)*
-
-        quantity_fragment
-        = quantity
-        / amount
-
-        alternative_quantity
-        = ~"[/]" break? multipart_quantity
-
-        quantity
-        = amount_with_conversion
-        / amount_with_attached_units
-        / amount_with_multiplier
-        / amount_imprecise
-
-        # 4lb (900g)
-        amount_with_conversion
-        = amount break? unit !letter break parenthesized_quantity
-
-        # 1 kg
-        amount_with_attached_units
-        = amount break? unit !letter
-
-        # two (five ounce)
-        amount_with_multiplier
-        = amount break? parenthesized_quantity
-
-        # pinch
-        amount_imprecise
-        = imprecise_unit !letter
-
-        parenthesized_quantity
-        = open amount_with_attached_units close
-
-        amount
-        = float
-        / mixed_number
-        / fraction
-        / integer
-        / number
-
-        break
-        = " "
-        / comma
-        / hyphen
-        / ~"[\t]"
-
-        separator
-        = break
-        / "-"
-
-        ingredient
-        = (word (break word)* ~".*")
-
-        open = "("
-        close = ")"
-
-        word
-        = (letter+)
-
-        float
-        = (integer? ~"[.]" integer)
-
-        mixed_number
-        = (integer separator fraction)
-
-        fraction
-        = (multicharacter_fraction)
-        / (unicode_fraction)
-
-        multicharacter_fraction
-        = (integer ~"[/]" integer)
-
-        integer
-        = ~"[0-9]+"
-
-        letter
-        = ~"[a-zA-Z]"
-
-        comma
-        = ","
-
-        hyphen
-        = "-"
-
-        unit
-        = english_unit
-        / metric_unit
-        / imprecise_unit
-
-        english_unit
-        = cup
-        / fluid_ounce
-        / gallon
-        / ounce
-        / pint
-        / pound
-        / quart
-        / tablespoon
-        / teaspoon
-        / barspoon
-        
-        cup
-        = "cups"
-        / "cup"
-        / "c."
-        / "c"
-
-        fluid_ounce
-        = fluid break ounce
-
-        fluid
-        = "fluid"
-        / "fl."
-        / "fl"
-
-        gallon
-        = "gallons"
-        / "gallon"
-        / "gal."
-        / "gal"
-
-        ounce
-        = "ounces"
-        / "ounce"
-        / "oz."
-        / "oz"
-
-        
-        barspoon
-        = "barspoons"
-        / "barspoon"
-        / "bar spoons"
-        / "bar spoon"
-    
-        pint
-        = "pints"
-        / "pint"
-        / "pt."
-        / "pt"
-
-        pound
-        = "pounds"
-        / "pound"
-        / "lbs."
-        / "lbs"
-        / "lb."
-        / "lb"
-
-        quart
-        = "quarts"
-        / "quart"
-        / "qts."
-        / "qts"
-        / "qt."
-        / "qt"
-
-        tablespoon
-        = "tablespoons"
-        / "tablespoon"
-        / "tbsp."
-        / "tbsp"
-        / "tbs."
-        / "tbs"
-        / "T."
-        / "T"
-
-        teaspoon
-        = "teaspoons"
-        / "teaspoon"
-        / "tsp."
-        / "tsp"
-        / "t."
-        / "t"
-
-        metric_unit
-        = gram
-        / kilogram
-        / liter
-        / milligram
-        / milliliter
-
-        gram
-        = "grams"
-        / "gram"
-        / "gr."
-        / "gr"
-        / "g."
-        / "g"
-
-        kilogram
-        = "kilograms"
-        / "kilogram"
-        / "kg."
-        / "kg"
-
-        liter
-        = "liters"
-        / "liter"
-        / "l."
-        / "l"
-
-        milligram
-        = "milligrams"
-        / "milligram"
-        / "mg."
-        / "mg"
-
-        milliliter
-        = "milliliters"
-        / "milliliter"
-        / "ml."
-        / "ml"
-
-        imprecise_unit
-        = dash
-        / handful
-        / pinch
-        / touch
-
-        dash
-        = "dashes"
-        / "dash"
-
-        handful
-        = "handfuls"
-        / "handful"
-
-        pinch
-        = "pinches"
-        / "pinch"
-
-        touch
-        = "touches"
-        / "touch"
-
-        number = written_number break
-
-        written_number
-        = "a"
-        / "an"
-        / "zero"
-        / "one"
-        / "two"
-        / "three"
-        / "four"
-        / "five"
-        / "six"
-        / "seven"
-        / "eight"
-        / "nine"
-        / "ten"
-        / "eleven"
-        / "twelve"
-        / "thirteen"
-        / "fourteen"
-        / "fifteen"
-        / "sixteen"
-        / "seventeen"
-        / "eighteen"
-        / "nineteen"
-        / "twenty"
-        / "thirty"
-        / "forty"
-        / "fifty"
-        / "sixty"
-        / "seventy"
-        / "eighty"
-        / "ninety"
-
-        unicode_fraction
-        = ~"[¼]"u
-        / ~"[½]"u
-        / ~"[¾]"u
-        / ~"[⅐]"u
-        / ~"[⅑]"u
-        / ~"[⅒]"u
-        / ~"[⅓]"u
-        / ~"[⅔]"u
-        / ~"[⅕]"u
-        / ~"[⅖]"u
-        / ~"[⅗]"u
-        / ~"[⅘]"u
-        / ~"[⅙]"u
-        / ~"[⅚]"u
-        / ~"[⅛]"u
-        / ~"[⅜]"u
-        / ~"[⅝]"u
-        / ~"[⅞]"u
-        """)
-
-
-class Ingreedy(BaseIngreedy):
-    grammar = custom_ingredient_grammar
-
-    def visit_fraction(self, node, visited_children):
-        return visited_children[0]
 
 
 def create_recipe(data, user):
@@ -369,6 +65,7 @@ def tokenize_recipes_from_plaintext(text):
 def clean(text):
     return text.replace('\xa0', '')
 
+
 def remove_text_in_parens(text):
     start = text.find('(')
     end = text.find(')')
@@ -376,6 +73,7 @@ def remove_text_in_parens(text):
         result = text[:start-1] + text[end+1:]
         return result, True
     return text, False
+
 
 def remove_all_text_in_parens(text):
     text, result = remove_text_in_parens(text)
@@ -435,12 +133,14 @@ def is_directions_classifier(text):
         else:
             return False
 
+
 def is_number(s):
     try:
         float(s)
         return True
     except ValueError:
         return False
+
 
 def get_text_within_parens(text):
     start = text.find('(')
@@ -497,10 +197,20 @@ def replace_reference_abbreviation_with_name(reference):
 def plaintext_garnish_handler(recipe, line):
     def add_to_garnish(text):
         print('line to replace: ', line)
-        if recipe.garnish:
-            recipe.garnish = recipe.garnish.strip() + ', ' + text
+        if type(recipe) is dict:
+            garnish = recipe['garnish']
         else:
-            recipe.garnish = text.strip()
+            garnish = recipe.garnish
+
+        if garnish:
+            garnish = garnish.strip() + ', ' + text
+        else:
+            garnish = text.strip()
+        if type(recipe) is dict:
+            recipe['garnish'] = garnish
+        else:
+            recipe.garnish = garnish
+
 
     # TODO probably want to make into rule table
     if 'garnish:' in line.lower():
@@ -565,6 +275,7 @@ def is_url_then_recipe(lines):
 
 def clean_lines(lines):
     return [line for line in lines if line.strip()]
+
 
 def convert_old_to_new_rating(rating):
     rating = Decimal(rating)
@@ -700,6 +411,19 @@ def create_recipe_from_plaintext(text):
     return recipe
 
 
+def convert_ingredient(ingredient):
+    print(f'ingredient is {ingredient}')
+    return {
+        'unit': ingredient['quantity'][0]['unit']
+            if ingredient['quantity'] and ingredient['quantity'][0]['unit'] else None,
+        'type': ingredient['quantity'][0]['unit_type']
+            if ingredient['quantity'] and ingredient['quantity'][0]['unit_type'] else None,
+        'amount': ingredient['quantity'][0]['amount']
+            if ingredient['quantity'] and ingredient['quantity'][0]['amount'] else None,
+        'ingredient': ingredient['ingredient']
+    }
+
+
 def save_recipe_from_parsed_recipes(parsed):
     '''
         title: str = None
@@ -713,16 +437,16 @@ def save_recipe_from_parsed_recipes(parsed):
         source: str = None
     '''
 
-    def convert_ingredient(ingredient):
-        return {
-            'unit': ingredient['quantity'][0]['unit']
-                if ingredient['quantity'] and ingredient['quantity'][0]['unit'] else None,
-            'type': ingredient['quantity'][0]['unit_type']
-                if ingredient['quantity'] and ingredient['quantity'][0]['unit_type'] else None,
-            'amount': ingredient['quantity'][0]['amount']
-                if ingredient['quantity'] and ingredient['quantity'][0]['amount'] else None,
-            'ingredient': ingredient['ingredient']
-        }
+    # def convert_ingredient(ingredient):
+    #     return {
+    #         'unit': ingredient['quantity'][0]['unit']
+    #             if ingredient['quantity'] and ingredient['quantity'][0]['unit'] else None,
+    #         'type': ingredient['quantity'][0]['unit_type']
+    #             if ingredient['quantity'] and ingredient['quantity'][0]['unit_type'] else None,
+    #         'amount': ingredient['quantity'][0]['amount']
+    #             if ingredient['quantity'] and ingredient['quantity'][0]['amount'] else None,
+    #         'ingredient': ingredient['ingredient']
+    #     }
 
     recipe = {
         'name': parsed.title,
