@@ -2,6 +2,7 @@ import csv
 import re
 
 from decimal import Decimal
+from string import capwords
 from unicodedata import numeric
 from fractions import Fraction
 
@@ -49,7 +50,7 @@ class Ingredient(models.Model):
         # if self.id is None:
         #     self.name = IngredientMapping.map(self.name)
 
-        self.name = self.name.title()
+        self.name = capwords(self.name)
         super().save(*args, **kwargs)
 
 
@@ -85,6 +86,7 @@ class Recipe(models.Model):
     glassware = models.CharField(max_length=100, null=True)
     tools = models.CharField(max_length=300, null=True)
     rating = models.FloatField(null=True, blank=True)
+    non_alcoholic = models.BooleanField(default=False)
     notes = models.TextField(null=True, blank=True)
     date_added = models.DateTimeField(auto_now=True)
     date_modified = models.DateTimeField(auto_now=True)
@@ -225,6 +227,7 @@ class RecipeIngredient(models.Model):
     ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE)
     beverage = models.ForeignKey(Recipe, on_delete=models.CASCADE)
     quantity = models.ForeignKey(Quantity, null=True, blank=True, on_delete=models.CASCADE)
+    note = models.TextField(null=True)
 
     def __str__(self):
         if self.quantity:
