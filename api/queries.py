@@ -1,4 +1,6 @@
 import re
+from urllib.parse import urlparse
+
 import graphene
 
 from collections import Counter
@@ -54,6 +56,15 @@ class RecipeIngredientType(DjangoObjectType):
 class RecipeType(DjangoObjectType):
     class Meta:
         model = Recipe
+
+    source_or_url = graphene.String()
+
+    def resolve_source_or_url(self, info):
+        if self.source:
+            return self.source
+        elif self.source_url:
+            return urlparse(self.source_url).netloc.split('.')[0]
+        return ''
 
     all_ingredients = graphene.List(graphene.String)
 
@@ -207,7 +218,7 @@ class Query(object):
                         recipes = Recipe.objects.all()
                         if exact_ids:
                             recipes.filter(id__in=exact_ids)
-                        recipes = recipes.annotate(search=SearchVector('ingredients__name'))\
+                        recipes = recipes.annotate(search=vectors)\
                             .filter(search=SearchQuery(match, search_type='phrase'))
                         if exact_ids:
                             exact_ids = exact_ids & set(recipes.values_list('id', flat=True))
