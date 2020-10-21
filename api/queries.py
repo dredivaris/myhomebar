@@ -77,7 +77,7 @@ class RecipeType(DjangoObjectType):
         missing = set()
         if hasattr(self, 'missing_ingredient_models'):
             missing = {m.name for m in self.missing_ingredient_models}
-        return ', '.join(i.name for i in self.ingredients.all()
+        return ', '.join(i.name for i in self.ingredient_list
                          if not i.is_garnish and i.name not in missing)
 
     garnishes = graphene.List(graphene.String)
@@ -202,9 +202,16 @@ class Query(object):
         vectors = SearchVector('name') + SearchVector('ingredients__name')
         exact_ids = None
         if not search_term:
-            current_filtered = Recipe.objects.all().prefetch_related('ingredients').order_by('-id')
+            current_filtered = Recipe.objects.all()\
+                .prefetch_related(
+                    Prefetch('ingredients', to_attr='ingredient_list',
+                             queryset=Ingredient.objects.all().only('name', 'is_garnish')))\
+                .order_by('-id')\
+                .only('id', 'source', 'source_url', 'name', 'shortlist', 'rating', 'non_alcoholic')
         else:
-            recipes = Recipe.objects.all()
+            recipes = Recipe.objects.all().prefetch_related(
+                    Prefetch('ingredients', to_attr='ingredient_list',
+                             queryset=Ingredient.objects.all().only('name', 'is_garnish')))
 
             if '"' in search_term:
                 if Counter(search_term)['"'] % 2 != 0:
