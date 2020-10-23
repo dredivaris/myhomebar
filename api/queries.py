@@ -8,11 +8,14 @@ from collections import Counter
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import User
 from django.contrib.postgres.search import SearchVector, SearchQuery
+from django.core.exceptions import ValidationError
+from django.core.validators import URLValidator
 from django.db.models import Prefetch
 from graphene import ObjectType
 
 from graphene_django.types import DjangoObjectType
 
+from api.domain import create_recipe_from_url, save_recipe_from_parsed_recipes
 from api.models import Ingredient, Recipe, RecipeIngredient, PantryIngredient, Pantry, \
     IngredientToIngredient
 from api.mutations import UserType
@@ -198,6 +201,18 @@ class Query(object):
             found = re.findall('"([^"]*)"', text)
             left = re.sub('"([^"]*)"', '', text)
             return found, left
+
+        # handle possible url
+        validator = URLValidator()
+        try:
+            validator(search_term)
+        except ValidationError:
+            pass
+        else:
+            # add new recipe and search on all
+            recipe = create_recipe_from_url(search_term)
+            save_recipe_from_parsed_recipes(recipe)
+            search_term = ''
 
         vectors = SearchVector('name') + SearchVector('ingredients__name')
         exact_ids = None
