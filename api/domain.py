@@ -1,16 +1,19 @@
 import math
+import re
 from collections import Counter
 from dataclasses import dataclass
 from decimal import Decimal
 from fractions import Fraction
+from string import capwords
 
 import nltk
 from django.contrib.auth.models import User
 
 from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
+from recipe_scrapers import scrape_me
 
-from api.general.core import Ingreedy
+from api.general.core import Ingreedy, replacement_mapper
 from api.models import Recipe, Ingredient, RecipeIngredient, PantryIngredient
 from api.validators import RecipeValidator
 
@@ -31,6 +34,15 @@ def update_recipe(data, user):
 
 def parse_plaintext_recipe(plaintext_recipe):
     pass
+
+
+def create_recipe_from_url(line):
+    def reformat_for_validator(pre_parsed_recipe):
+        # TODO start here
+        return pre_parsed_recipe
+
+    recipe = scrape_me(line)
+    return reformat_for_validator(recipe)
 
 
 def tokenize_recipes_from_plaintext(text):
@@ -55,6 +67,10 @@ def tokenize_recipes_from_plaintext(text):
                 current_lines.append(line)
     if current_lines:
         recipe_texts.append('\n'.join(current_lines))
+
+    # parse out possible url
+    if is_only_urls(lines):
+        return [create_recipe_from_url(line.strip()) for line in lines if line.strip()]
 
     return [
         create_recipe_from_plaintext(plaintext_recipe)
@@ -191,7 +207,7 @@ def replace_reference_abbreviation_with_name(reference):
     try:
         return reference_mapping[reference]
     except KeyError:
-        return None
+        return capwords(reference)
 
 
 def plaintext_garnish_handler(recipe, line):
@@ -199,6 +215,8 @@ def plaintext_garnish_handler(recipe, line):
         print('line to replace: ', line)
         if type(recipe) is dict:
             garnish = recipe['garnish']
+        elif callable(recipe.garnish):
+            garnish = recipe.garnish()
         else:
             garnish = recipe.garnish
 
@@ -206,8 +224,11 @@ def plaintext_garnish_handler(recipe, line):
             garnish = garnish.strip() + ', ' + text
         else:
             garnish = text.strip()
+
         if type(recipe) is dict:
             recipe['garnish'] = garnish
+        elif callable(recipe.garnish):
+            recipe._garnish = garnish
         else:
             recipe.garnish = garnish
 
@@ -247,6 +268,7 @@ def _convert_to_fractional_text(number):
 
 
 def is_only_urls(lines):
+    lines = clean_lines(lines)
     validator = URLValidator()
     for line in lines:
         try:
@@ -301,6 +323,36 @@ def convert_old_to_new_rating(rating):
         return rating
 
 
+def cleanup(line):
+    for frm, to in replacement_mapper.items():
+        line = line.replace(frm, to)
+    return line
+
+
+def handle_ingredient(recipe, line):
+    line = cleanup(line)
+    if plaintext_garnish_handler(recipe, line):
+        return
+
+    print('to parse ingreedy: ', line)
+    parsed_ingredient = Ingreedy().parse(line)
+    try:
+        parsed_ingredient['quantity'][0]['amount'] = \
+            _convert_to_fractional_text(parsed_ingredient['quantity'][0]['amount'])
+    except:
+        pass
+    note = re.findall('\((.*?)\)', parsed_ingredient['ingredient'])
+    if note:
+        note = note[-1]
+        parsed_ingredient['ingredient'] = re.sub('\((.*?)\)',
+                                                 '',
+                                                 parsed_ingredient['ingredient']).strip()
+        if 'garnish' in note.lower():
+            parsed_ingredient['is_garnish'] = True
+        parsed_ingredient['note'] = note
+    return parsed_ingredient
+
+
 def create_recipe_from_plaintext(text):
     @dataclass
     class Recipe:
@@ -320,10 +372,6 @@ def create_recipe_from_plaintext(text):
     title_line = lines[0]
     lines = clean_lines(lines)
 
-    # parse out possible url
-    if is_only_urls(lines):
-        pass
-
     possible_url = is_url_then_recipe(lines)
     if not possible_url:
         possible_url = title_line.split()[-1]
@@ -339,6 +387,7 @@ def create_recipe_from_plaintext(text):
     else:
         lines.pop(0)
         title_line = lines[0]
+
     # parse out possible reference
     reference = get_text_within_parens(title_line)
     if reference:
@@ -376,15 +425,10 @@ def create_recipe_from_plaintext(text):
             recipe.description = line
             continue
 
-        if not plaintext_garnish_handler(recipe, line):
-            print('to parse ingreedy: ', line)
-            parsed_ingredient = Ingreedy().parse(line)
-            try:
-                parsed_ingredient['quantity'][0]['amount'] = \
-                    _convert_to_fractional_text(parsed_ingredient['quantity'][0]['amount'])
-            except:
-                pass
-            recipe.ingredients.append(parsed_ingredient)
+        handled = handle_ingredient(recipe, line)
+        if handled:
+            recipe.ingredients.append(handled)
+
         if recipe.garnish:
             print('done')
     directions = []
@@ -411,7 +455,13 @@ def create_recipe_from_plaintext(text):
     return recipe
 
 
-def convert_ingredient(ingredient):
+def convert_ingredient(ingredient, recipe):
+    print(f'ingredient was {ingredient}')
+    if type(ingredient) is str:
+        ingredient = handle_ingredient(recipe, ingredient)
+    if not ingredient:
+        return
+
     print(f'ingredient is {ingredient}')
     return {
         'unit': ingredient['quantity'][0]['unit']
@@ -420,11 +470,13 @@ def convert_ingredient(ingredient):
             if ingredient['quantity'] and ingredient['quantity'][0]['unit_type'] else None,
         'amount': ingredient['quantity'][0]['amount']
             if ingredient['quantity'] and ingredient['quantity'][0]['amount'] else None,
-        'ingredient': ingredient['ingredient']
+        'ingredient': ingredient['ingredient'],
+        # 'is_garnish': ingredient.get('is_garnish', False),
+        'note': ingredient.get('note', None)
     }
 
 
-def save_recipe_from_parsed_recipes(parsed):
+def save_recipe_from_parsed_recipes(p):
     '''
         title: str = None
         url_link: str = None
@@ -447,20 +499,38 @@ def save_recipe_from_parsed_recipes(parsed):
     #             if ingredient['quantity'] and ingredient['quantity'][0]['amount'] else None,
     #         'ingredient': ingredient['ingredient']
     #     }
+    def get_url(parsed_recipe):
+        if hasattr(parsed_recipe, 'url_link'):
+            return parsed_recipe.url_link
+        else:
+            return parsed_recipe.url
+
+    def get_ingredients(parsed_recipe):
+        if callable(parsed_recipe.ingredients):
+            return parsed_recipe.ingredients()
+        return parsed_recipe.ingredients
+
+    def get_source(parsed_recipe):
+        source = parsed_recipe.reference() \
+            if callable(parsed_recipe.reference) else parsed_recipe.reference
+        if not source:
+            source = parsed_recipe.source
+        return source
 
     recipe = {
-        'name': parsed.title,
-        'source_url': parsed.url_link,
-        'source': parsed.reference,
-        'garnish': parsed.garnish or '',
+        'name': p.title() if callable(p.title) else p.title,
+        'source_url': get_url(p),
+        'source': get_source(p),
         'rating_set': 'rating_set',
-        'rating': parsed.rating,
-        'directions': parsed.directions,
-        'description': parsed.description,
-        'ingredients': [convert_ingredient(i) for i in parsed.ingredients],
+        'rating': p.rating() if callable(p.rating) else p.rating,
+        'directions': p.directions() if callable(p.directions) else p.directions,
+        'description': p.description() if callable(p.description) else p.description,
+        'ingredients': [i for i in [convert_ingredient(i, p) for i in get_ingredients(p)] if i],
         'recipe_type': Recipe.COCKTAIL,
+        'garnish': (p.garnish() if callable(p.garnish) else p.garnish) or '',
+
     }
-    if not parsed.rating:
+    if not p.rating:
         del recipe['rating']
     recipe_validator = RecipeValidator(**recipe)
     recipe_validator.with_user(User.objects.first())  # TODO: for now
