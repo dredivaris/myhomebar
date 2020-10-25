@@ -115,18 +115,21 @@ class Unit(models.Model):
 class Quantity(models.Model):
     class Meta:
         verbose_name_plural = 'quantities'
-        unique_together = [['amount', 'divisor', 'unit']]
+        unique_together = [['amount', 'divisor', 'unit', 'scant', 'generous']]
 
     amount = models.DecimalField(decimal_places=2, max_digits=5)
+    scant = models.BooleanField(default=False)
+    generous = models.BooleanField(default=False)
     divisor = models.IntegerField(blank=True, null=True)
     unit = models.ForeignKey(Unit, null=True, blank=True, on_delete=models.CASCADE)
 
     @classmethod
-    def create_quantity(cls, quantity, unit):
+    def create_quantity(cls, quantity, unit, scant, generous):
+        print(f'creating quantity {quantity}, unit {unit}')
         if not quantity:
             return None
         if type(quantity) is int:
-            result, _ = cls.objects.get_or_create(amount=quantity, divisor=None, unit=unit)
+            result, _ = cls.objects.get_or_create(amount=Decimal(quantity), divisor=None, unit=unit)
             return result
         if type(quantity) is float:
             quantity = Decimal(str(quantity))
@@ -174,7 +177,8 @@ class Quantity(models.Model):
                                                   unit=unit)
         elif len(dividend_divisor) == 1:
             try:
-                result, _ = cls.objects.get_or_create(amount=dividend_divisor[0], divisor=None, unit=unit)
+                result, _ = cls.objects.get_or_create(amount=dividend_divisor[0],
+                                                      divisor=None, unit=unit)
             except Exception as e:
                 import pdb
                 pdb.set_trace()
@@ -182,7 +186,12 @@ class Quantity(models.Model):
         else:
             result, _ = cls.objects.get_or_create(amount=dividend_divisor[0],
                                                   divisor=dividend_divisor[1],
-                                                  unit=unit)
+                                                  unit=unit,
+                                                  scant=scant,
+                                                  generous=generous)
+        result.scant = scant
+        result.generous = generous
+        result.save()
         return result
 
     def _is_integer(self, decimal):
@@ -212,12 +221,18 @@ class Quantity(models.Model):
         return f'{integer}{self.display_int(dividend)}/{str(self.divisor)}'
 
     def __str__(self):
+        modifier = ''
+        if self.scant:
+            modifier = '-'
+        elif self.generous:
+            modifier = '+'
         if self.amount and self.divisor:
             unit = f'{self.unit.name}' if getattr(self.unit, 'name', None) else ''
-            return f'{self.display_fraction} {unit}'
+            return f'{modifier}{self.display_fraction} {unit}'
         else:
-            return str(f'{self.display_amount} {self.unit.name}'
-                       if getattr(self.unit, 'name', None) else self.display_amount)
+            return str(f'{modifier}{self.display_amount} {self.unit.name}'
+                       if getattr(self.unit, 'name', None)
+                       else f'{modifier}{self.display_amount}')
 
 
 class RecipeIngredient(models.Model):
@@ -237,6 +252,7 @@ class RecipeIngredient(models.Model):
                 and self.ingredient.name[0].isdigit()
             ):
                 return self.ingredient.name
+
             return f'{self.quantity} {self.ingredient.name}'
         return self.ingredient.name
 
