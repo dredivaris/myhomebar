@@ -1,4 +1,5 @@
 from collections import Iterable
+from string import capwords
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
@@ -6,7 +7,8 @@ from graphql import GraphQLError
 
 from api.individual_recipe_parser import INGREDIENT_PARSER, JUICE_OF_PARSER, \
     ALTERNATIVE_UNIT_LOCATION_PARSER
-from api.models import Recipe, Ingredient, Unit, Quantity, RecipeIngredient, IngredientMapping
+from api.models import Recipe, Ingredient, Unit, Quantity, RecipeIngredient, IngredientMapping, \
+    IngredientToIngredient
 
 
 class RecipeValidator(object):
@@ -23,7 +25,7 @@ class RecipeValidator(object):
         self.process_rating()
 
     def save(self):
-        self.recipe_raw['name'] = self.recipe_raw['name'].title()
+        self.recipe_raw['name'] = capwords(self.recipe_raw['name'])
         self.recipe = Recipe(**self.recipe_raw)
 
         self.recipe.owner = self.user
@@ -39,7 +41,7 @@ class RecipeValidator(object):
             print(f'duplicate found for {self.recipe.name}')
 
     def update(self):
-        self.recipe_raw['name'] = self.recipe_raw['name'].title()
+        self.recipe_raw['name'] = capwords(self.recipe_raw['name'])
         # self.recipe = Recipe(**self.recipe_raw)
 
         recipe_id = self.recipe_raw.pop('id')
@@ -59,6 +61,7 @@ class RecipeValidator(object):
         self.user = user
 
     def process_ingredients(self):
+        from api.domain import clean_extras
         ingredients = []
         if isinstance(self.recipe_raw['ingredients'], Iterable) \
                 and type(self.recipe_raw['ingredients']) is not str:
@@ -72,7 +75,8 @@ class RecipeValidator(object):
                 ingredients.append(raw_ingredient)
             else:
                 cleaned_text = raw_ingredient.strip()
-
+                # probably should be refactored to use ingreedy.
+                cleaned_text, extras = clean_extras(cleaned_text)
                 match = INGREDIENT_PARSER.match(cleaned_text)
                 if not match:
                     match = JUICE_OF_PARSER.match(cleaned_text)
@@ -94,6 +98,8 @@ class RecipeValidator(object):
                         'amount': match.group(1),
                         'unit': match.group(7),
                         'ingredient': match.group(8).strip(),
+                        'scant': '-' in extras,
+                        'generous': '+' in extras,
                     }
                 ingredients.append(ingredient)
 
@@ -110,7 +116,7 @@ class RecipeValidator(object):
     def process_garnish(self):
         # todo: we want to support multiple garnishes in the future and garnish units
         try:
-            garnish = self.recipe_raw['garnish'].strip()
+            garnish = self.recipe_raw['garnish'] and self.recipe_raw['garnish'].strip()
         except KeyError:
             return
         except AttributeError:
@@ -137,21 +143,34 @@ class RecipeValidator(object):
                 unit.save()
         try:
             print(f'  with quantity {ingredient["amount"]} and unit: {unit}')
-            quantity = Quantity.create_quantity(ingredient['amount'], unit=unit)
+            quantity = Quantity.create_quantity(ingredient['amount'], unit=unit,
+                                                scant=ingredient.get('scant', False),
+                                                generous=ingredient.get('generous', False))
         except KeyError:
             print('  hit key error creating quantity')
             quantity = None
         try:
-            ingredient, _ = Ingredient.objects.get_or_create(
-                name=ingredient['ingredient'].title(), owner=self.user)
+            if len(ingredient['ingredient'].split(',')) == 2:
+                base_ingredient, specific_ingredient = [i.strip() for i in
+                                                        ingredient['ingredient'].split(',')]
+                base, created = Ingredient.objects.get_or_create(name=capwords(base_ingredient),
+                                                                 owner=self.user)
+                print(f'setup base ingredient {base}, created: {created}')
+                ingredient, created = Ingredient.objects.get_or_create(
+                    name=capwords(' '.join((specific_ingredient, base_ingredient))),
+                    owner=self.user)
+                IngredientToIngredient.objects.get_or_create(child=ingredient, parent_id=base.id)
+            else:
+                ingredient, _ = Ingredient.objects.get_or_create(
+                    name=capwords(ingredient['ingredient']), owner=self.user)
         except Exception as e:
             breakpoint()
         ri = RecipeIngredient(
             ingredient=ingredient,
             beverage=self.recipe,
         )
-
         ri.quantity = quantity or None
+        ri.note = getattr(ingredient, 'note', None)
         ri.save()
 
     def save_and_add_garnish(self, update=False):
@@ -162,9 +181,9 @@ class RecipeValidator(object):
             self.garnish = self.garnish.lower().replace('garnish:', '').strip()
             try:
                 # ingredient = Ingredient.objects.get(name=IngredientMapping.map(self.garnish.title()).title(), owner=self.user.id)
-                ingredient = Ingredient.objects.get(name=self.garnish.title(), owner=self.user.id)
+                ingredient = Ingredient.objects.get(name=capwords(self.garnish), owner=self.user.id)
             except Ingredient.DoesNotExist:
-                ingredient = Ingredient.objects.create(name=self.garnish.title(), owner_id=self.user.id, is_garnish=True)
+                ingredient = Ingredient.objects.create(name=capwords(self.garnish), owner_id=self.user.id, is_garnish=True)
                 created = True
 
             if not created and not ingredient.is_garnish:
