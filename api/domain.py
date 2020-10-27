@@ -110,8 +110,11 @@ def is_directions_classifier(text):
         counts = Counter(i[1] for i in pos)
         return counts, len(pos)
 
+    def clean_text(text):
+        return text.replace('+', '').replace('-', '').strip()
+
     def has_unit(text):
-        return bool(Ingreedy().parse(text)['quantity'])
+        return bool(Ingreedy().parse(clean_text(text))['quantity'])
 
     if len(lines) > 1 and not has_unit(text):
         return True
@@ -328,9 +331,19 @@ def cleanup(line):
         line = line.replace(frm, to)
     return line
 
+def clean_extras(line):
+    extras = set()
+    if line.startswith('+'):
+        extras.add('+')
+    elif line.startswith('-'):
+        extras.add('-')
+    line = line.lstrip('+-')
+    return line, extras
+
 
 def handle_ingredient(recipe, line):
     line = cleanup(line)
+    line, extras = clean_extras(line)
     if plaintext_garnish_handler(recipe, line):
         return
 
@@ -342,6 +355,7 @@ def handle_ingredient(recipe, line):
     except:
         pass
     note = re.findall('\((.*?)\)', parsed_ingredient['ingredient'])
+    scant, generous = False, False
     if note:
         note = note[-1]
         parsed_ingredient['ingredient'] = re.sub('\((.*?)\)',
@@ -350,6 +364,11 @@ def handle_ingredient(recipe, line):
         if 'garnish' in note.lower():
             parsed_ingredient['is_garnish'] = True
         parsed_ingredient['note'] = note
+    if '+' in extras:
+        parsed_ingredient['generous'] = True
+    if '-' in extras:
+        parsed_ingredient['scant'] = True
+
     return parsed_ingredient
 
 
@@ -472,7 +491,9 @@ def convert_ingredient(ingredient, recipe):
             if ingredient['quantity'] and ingredient['quantity'][0]['amount'] else None,
         'ingredient': ingredient['ingredient'],
         # 'is_garnish': ingredient.get('is_garnish', False),
-        'note': ingredient.get('note', None)
+        'note': ingredient.get('note', None),
+        'scant': ingredient.get('scant', False),
+        'generous': ingredient.get('generous', False),
     }
 
 
