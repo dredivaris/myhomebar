@@ -535,7 +535,7 @@ def save_recipe_from_parsed_recipes(p):
         source = parsed_recipe.reference() \
             if callable(parsed_recipe.reference) else parsed_recipe.reference
         if not source:
-            source = parsed_recipe.source
+            source = getattr(parsed_recipe, 'source', None)
         return source
 
     recipe = {
