@@ -331,6 +331,13 @@ def cleanup(line):
         line = line.replace(frm, to)
     return line
 
+
+def remove_prefix(text, prefix):
+    if text.startswith(prefix):
+        return text[len(prefix):]
+    return text  # or whatever
+
+
 def clean_extras(line):
     extras = set()
     if line.startswith('+'):
@@ -384,6 +391,8 @@ def create_recipe_from_plaintext(text):
         garnish: str = None
         reference: str = None
         source: str = None
+        glassware: str = None
+        notes: str = None
 
     recipe = Recipe()
     text = text.replace('\t', ' ')
@@ -423,9 +432,14 @@ def create_recipe_from_plaintext(text):
     else:
         recipe.title = title_line
 
-    recipe.ingredients = []
-
     lines = lines[1:]
+
+    # parse possible glassware / garnish
+    if lines[0].lstrip().startswith('GLASSWARE'):
+        recipe.glassware = lines[0].replace('GLASSWARE', '').strip()
+        lines = lines[1:]
+
+    recipe.ingredients = []
     index = 0
     for index, line in enumerate(lines):
         if not line:
@@ -454,6 +468,9 @@ def create_recipe_from_plaintext(text):
     for line in lines[index:]:
         if line.lower().startswith('garnish'):
             recipe.garnish = line
+        elif line.startswith('NOTE') or line.startswith('NOTES'):
+            recipe.notes = remove_prefix(line, 'NOTES').strip()
+            recipe.notes = remove_prefix(recipe.notes, 'NOTE').strip()
         else:
             directions.append(line)
     directions = '\n'.join(directions)
@@ -548,9 +565,11 @@ def save_recipe_from_parsed_recipes(p):
         'description': p.description() if callable(p.description) else p.description,
         'ingredients': [i for i in [convert_ingredient(i, p) for i in get_ingredients(p)] if i],
         'recipe_type': Recipe.COCKTAIL,
+        'glassware': p.glassware,
         'garnish': (p.garnish() if callable(p.garnish) else p.garnish) or '',
-
+        'notes': p.notes,
     }
+
     if not p.rating:
         del recipe['rating']
     recipe_validator = RecipeValidator(**recipe)
