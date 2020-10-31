@@ -253,8 +253,8 @@ class RecipeIngredient(models.Model):
             ):
                 return self.ingredient.name
 
-            return f'{self.quantity} {self.ingredient.name}'
-        return self.ingredient.name
+            return f'{self.quantity} {self.ingredient.name} {f"({self.note})" if self.note else ""}'
+        return f'{self.ingredient.name} {f"({self.note})" if self.note else ""}'
 
 
 class Pantry(models.Model):
