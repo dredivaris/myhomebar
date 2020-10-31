@@ -36,8 +36,6 @@ class IngredientType(DjangoObjectType):
         categories = [i.parent.name for i in IngredientToIngredient.objects.filter(
             child_id=self.id).prefetch_related('parent')]
 
-        # categories = [cat.name for cat in ]
-        # categories = [cat.name for cat in self.categories.all()]
         return ', '.join(categories)
 
     categories = graphene.List(SimpleIngredientType)
@@ -273,7 +271,10 @@ class Query(object):
             if exact_ids:
                 ids = ids & exact_ids
             current_filtered = Recipe.objects.filter(id__in=ids)\
-                .prefetch_related('ingredients').order_by('-id')
+                .prefetch_related(
+                    Prefetch('ingredients', to_attr='ingredient_list',
+                             queryset=Ingredient.objects.all()
+                .only('name', 'is_garnish'))).order_by('-id')
         if shortlist:
             current_filtered = current_filtered.filter(shortlist=True)
         if allowances != -1:
