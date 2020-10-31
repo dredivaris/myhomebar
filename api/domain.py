@@ -111,7 +111,13 @@ def is_directions_classifier(text):
         return counts, len(pos)
 
     def clean_text(text):
-        return text.replace('+', '').replace('-', '').strip()
+        text = text.lower()
+        if len(text) > 7:
+            text_start, text_end = text[:7], text[7:]
+        else:
+            text_start, text_end = text, ''
+        text_start = text_start.replace('+', '').replace('-', '').replace('scant', '').strip()
+        return text_start + text_end
 
     def has_unit(text):
         return bool(Ingreedy().parse(clean_text(text))['quantity'])
@@ -340,11 +346,14 @@ def remove_prefix(text, prefix):
 
 def clean_extras(line):
     extras = set()
+    line = line.lower()
     if line.startswith('+'):
         extras.add('+')
     elif line.startswith('-'):
         extras.add('-')
-    line = line.lstrip('+-')
+    elif line.startswith('scant'):
+        extras.add('-')
+    line = line.lstrip('+-scant').strip()
     return line, extras
 
 
@@ -434,10 +443,13 @@ def create_recipe_from_plaintext(text):
 
     lines = lines[1:]
 
-    # parse possible glassware / garnish
-    if lines[0].lstrip().startswith('GLASSWARE'):
-        recipe.glassware = lines[0].replace('GLASSWARE', '').strip()
-        lines = lines[1:]
+    # if lines[0].lstrip().startswith('DESCRIPTION'):
+    #     recipe.description = lines[0].replace('DESCRIPTION', '').strip()
+    #     lines = lines[1:]
+    #
+    # if lines[0].lstrip().startswith('GLASSWARE'):
+    #     recipe.glassware = lines[0].replace('GLASSWARE', '').strip()
+    #     lines = lines[1:]
 
     recipe.ingredients = []
     index = 0
@@ -456,6 +468,12 @@ def create_recipe_from_plaintext(text):
         elif not recipe.ingredients and is_directions_classifier(line):
             # likely to be a description
             recipe.description = line
+            continue
+        elif line.lstrip().startswith('DESCRIPTION'):
+            recipe.description = line.replace('DESCRIPTION', '').strip()
+            continue
+        elif line.lstrip().startswith('GLASSWARE'):
+            recipe.glassware = line.replace('GLASSWARE', '').strip()
             continue
 
         handled = handle_ingredient(recipe, line)
