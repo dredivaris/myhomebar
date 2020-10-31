@@ -63,7 +63,9 @@ class RecipeValidator(object):
     def process_ingredients(self):
         from api.domain import clean_extras
         ingredients = []
-        if isinstance(self.recipe_raw['ingredients'], Iterable) \
+        if 'ingredients' not in self.recipe_raw:
+            ingredients_raw = []
+        elif isinstance(self.recipe_raw['ingredients'], Iterable) \
                 and type(self.recipe_raw['ingredients']) is not str:
             ingredients_raw = self.recipe_raw['ingredients']
         else:
@@ -103,7 +105,7 @@ class RecipeValidator(object):
                     }
                 ingredients.append(ingredient)
 
-        self.recipe_raw.pop('ingredients')
+        self.recipe_raw.pop('ingredients', None)
         return ingredients
 
     def process_type(self):
@@ -149,6 +151,7 @@ class RecipeValidator(object):
         except KeyError:
             print('  hit key error creating quantity')
             quantity = None
+        ingredient_instance = None
         try:
             if len(ingredient['ingredient'].split(',')) == 2:
                 base_ingredient, specific_ingredient = [i.strip() for i in
@@ -156,21 +159,22 @@ class RecipeValidator(object):
                 base, created = Ingredient.objects.get_or_create(name=capwords(base_ingredient),
                                                                  owner=self.user)
                 print(f'setup base ingredient {base}, created: {created}')
-                ingredient, created = Ingredient.objects.get_or_create(
+                ingredient_instance, created = Ingredient.objects.get_or_create(
                     name=capwords(' '.join((specific_ingredient, base_ingredient))),
                     owner=self.user)
-                IngredientToIngredient.objects.get_or_create(child=ingredient, parent_id=base.id)
+                IngredientToIngredient.objects.get_or_create(child=ingredient_instance,
+                                                             parent_id=base.id)
             else:
-                ingredient, _ = Ingredient.objects.get_or_create(
+                ingredient_instance, _ = Ingredient.objects.get_or_create(
                     name=capwords(ingredient['ingredient']), owner=self.user)
         except Exception as e:
             breakpoint()
         ri = RecipeIngredient(
-            ingredient=ingredient,
+            ingredient=ingredient_instance,
             beverage=self.recipe,
         )
         ri.quantity = quantity or None
-        ri.note = getattr(ingredient, 'note', None)
+        ri.note = ingredient.get('note', None)
         ri.save()
 
     def save_and_add_garnish(self, update=False):
