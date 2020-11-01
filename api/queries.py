@@ -212,7 +212,10 @@ class Query(object):
             save_recipe_from_parsed_recipes(recipe)
             search_term = ''
 
-        vectors = SearchVector('name') + SearchVector('ingredients__name')
+        vectors = SearchVector('name', config='english_unaccent') + \
+                  SearchVector('ingredients__name', config='english_unaccent') + \
+                  SearchVector('source', config='english_unaccent')
+
         exact_ids = None
         if not search_term:
             current_filtered = Recipe.objects.all()\
@@ -239,7 +242,8 @@ class Query(object):
                         if exact_ids:
                             recipes.filter(id__in=exact_ids)
                         recipes = recipes.annotate(search=vectors)\
-                            .filter(search=SearchQuery(match, search_type='phrase'))
+                            .filter(search=SearchQuery(match, search_type='phrase',
+                                                       config='english_unaccent'))
                         if exact_ids:
                             exact_ids = exact_ids & set(recipes.values_list('id', flat=True))
                         else:
@@ -264,7 +268,7 @@ class Query(object):
                 extra_ids += extra
 
             final_ids = Recipe.objects\
-                .annotate(search=SearchVector('name') + SearchVector('ingredients__name'))\
+                .annotate(search=vectors)\
                 .filter(search=SearchQuery(search_term)).values_list('id', flat=True)
 
             ids = set(ids) | set(extra_ids) | set(final_ids)
