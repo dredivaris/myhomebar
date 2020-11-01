@@ -583,9 +583,9 @@ def save_recipe_from_parsed_recipes(p):
         'description': p.description() if callable(p.description) else p.description,
         'ingredients': [i for i in [convert_ingredient(i, p) for i in get_ingredients(p)] if i],
         'recipe_type': Recipe.COCKTAIL,
-        'glassware': p.glassware,
+        'glassware': p.glassware if hasattr(p, 'glassware') else None,
         'garnish': (p.garnish() if callable(p.garnish) else p.garnish) or '',
-        'notes': p.notes,
+        'notes': p.notes if hasattr(p, 'notes') else None,
     }
 
     if not p.rating:
