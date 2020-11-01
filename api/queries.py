@@ -64,7 +64,8 @@ class RecipeType(DjangoObjectType):
         if self.source:
             return self.source
         elif self.source_url:
-            return urlparse(self.source_url).netloc.split('.')[0]
+            split_url = urlparse(self.source_url).netloc.split('.')
+            return split_url[1] if split_url[0] == 'www' else split_url[0]
         return ''
 
     all_ingredients = graphene.List(graphene.String)
