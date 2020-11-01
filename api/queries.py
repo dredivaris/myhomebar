@@ -215,7 +215,8 @@ class Query(object):
 
         vectors = SearchVector('name', config='english_unaccent') + \
                   SearchVector('ingredients__name', config='english_unaccent') + \
-                  SearchVector('source', config='english_unaccent')
+                  SearchVector('source', config='english_unaccent') + \
+                  SearchVector('source_url', config='english_unaccent')
 
         exact_ids = None
         if not search_term:
