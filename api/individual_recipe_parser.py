@@ -28,7 +28,7 @@ GLASSWARE = {
 }
 NUMBER_MATCHER = re.compile(r"(^[\xbc\xbd\xbe])|(^(\d*[.,/]?\d*))")
 INGREDIENT_PARSER = re.compile(
-    r"^(((\d*[.,/]?\d*)?[\xbc\xbd\xbe])|(\d*[.,/]?\d*)) ?({})?[\. ](.*)".format('|'
+    r"^((((\d+ )?\d*[.,/]?\d*)?[\xbc\xbd\xbe])|((\d+ )?\d*[.,/]?\d*)) ?({})?[\. ](.*)".format('|'
                                                                                 .join(ALL_UNITS)))
 JUICE_OF_PARSER = re.compile(r"^Juice of (\d+) (\w+)(?:.*)")
 ALTERNATIVE_UNIT_LOCATION_PARSER = re.compile(r"^.*(?:(\d+) ?({}))".format('|'.join(ALL_UNITS)))
@@ -51,50 +51,70 @@ class SkipToNextException(Exception):
 
 class RecipeFormat:
     recipe_formats = {
-        'DEATH_CO': {
-            'to_split_sentence_directions': True,
+        # 'DEATH_CO': {
+        #     'to_split_sentence_directions': True,
+        #     'steps': [
+        #         Step.NAME,
+        #         Step.ATTRIBUTION,
+        #         Step.DESCRIPTION,
+        #         Step.INGREDIENTS,
+        #         Step.GARNISH,
+        #         Step.DIRECTIONS],
+        #     'optional': [Step.GARNISH, Step.DESCRIPTION]
+        # },
+        # 'PDT': {
+        #     'to_split_sentence_directions': False,
+        #     'steps': [
+        #         Step.NAME,
+        #         Step.DESCRIPTION,
+        #         Step.INGREDIENTS,
+        #         Step.DIRECTIONS,
+        #         Step.GARNISH,
+        #         Step.ATTRIBUTION],
+        #     'optional': []
+        # },
+        # 'DEAD_RABBIT_MIXOLOGY_MAYHEM': {
+        #     'to_split_sentence_directions': False,
+        #     'steps': [
+        #         Step.NAME,
+        #         Step.INGREDIENTS,
+        #         Step.DIRECTIONS,
+        #         Step.GLASSWARE,
+        #         Step.GARNISH,
+        #         Step.ATTRIBUTION],
+        #     'optional': []
+        # },
+        # 'COCKTAIL_CODEX': {
+        #     'to_split_sentence_directions': False,
+        #     'steps': [
+        #         Step.NAME,
+        #         Step.ATTRIBUTION,
+        #         Step.DESCRIPTION,
+        #         Step.INGREDIENTS,
+        #         Step.GARNISH,
+        #         Step.DIRECTIONS],
+        #     'optional': []
+        # },
+        'MyFormat1': {
+            'to_split_sentence_directions': False,
             'steps': [
                 Step.NAME,
-                Step.ATTRIBUTION,
                 Step.DESCRIPTION,
                 Step.INGREDIENTS,
                 Step.GARNISH,
                 Step.DIRECTIONS],
-            'optional': [Step.GARNISH, Step.DESCRIPTION]
+            'optional': [Step.DESCRIPTION, Step.GARNISH]
         },
-        'PDT': {
+        'MyFormat2': {
             'to_split_sentence_directions': False,
             'steps': [
                 Step.NAME,
                 Step.DESCRIPTION,
                 Step.INGREDIENTS,
-                Step.DIRECTIONS,
-                Step.GARNISH,
-                Step.ATTRIBUTION],
-            'optional': []
-        },
-        'DEAD_RABBIT_MIXOLOGY_MAYHEM': {
-            'to_split_sentence_directions': False,
-            'steps': [
-                Step.NAME,
-                Step.INGREDIENTS,
-                Step.DIRECTIONS,
-                Step.GLASSWARE,
-                Step.GARNISH,
-                Step.ATTRIBUTION],
-            'optional': []
-        },
-        'COCKTAIL_CODEX': {
-            'to_split_sentence_directions': False,
-            'steps': [
-                Step.NAME,
-                Step.ATTRIBUTION,
-                Step.DESCRIPTION,
-                Step.INGREDIENTS,
-                Step.GARNISH,
                 Step.DIRECTIONS],
-            'optional': []
+            'optional': [Step.DESCRIPTION, Step.GARNISH]
         }
+
     }
 
 
@@ -140,29 +160,23 @@ class IndividualRecipeParser(object):
         return True
 
     def is_basic_text(self, text):
-        if self.is_ingredient(text):
-            return False
-        return True
+        return not self.is_ingredient(text)
 
     def is_garnish(self, text):
         return True if 'garnish' in text.lower() else False
 
     def is_name(self, text):
-        return self.is_basic_text(text)
+        return True
+        # return self.is_basic_text(text)
 
     def is_attribution(self, text):
         return self.is_basic_text(text)
 
     def is_directions(self, text):
-        if self.is_ingredient(text):
-            return False
-
-        return True
+        return not self.is_ingredient(text)
 
     def is_glassware(self, text):
-        if 'glass' in text.lower():
-            return True
-        return False
+        return 'glass' in text.lower()
 
     def is_description(self, text):
         return self.is_basic_text(text)
@@ -234,9 +248,10 @@ class IndividualRecipeParser(object):
                 else:
                     ingredient = {
                         'amount': match.group(1),
-                        'unit': match.group(5),
-                        'ingredient': match.group(6).strip(),
+                        'unit': match.group(7),
+                        'ingredient': match.group(8).strip(),
                     }
+
                 parsed_recipe['ingredients'].append(ingredient)
 
         def parse_directions(text):
@@ -287,7 +302,9 @@ class IndividualRecipeParser(object):
                 raise SkipToNextException()
 
             if not self.is_garnish(text):
-                print('its not really a garnish?')
+                print('its not really a garnish?', text)
+                if current_step in format['optional']:
+                    raise SkipToNextException()
                 raise InvalidParseStepException()
             print('garnish 2')
             parsed_recipe['garnish'] = text.strip()
@@ -370,12 +387,14 @@ class IndividualRecipeParser(object):
 
                     raise InvalidParseStepException(e)
             except SkipToNextException:
+                print('in skip to next')
                 try:
                     current_step_increment += 1
                     choose_parser_for[get_step()](line)
                 except SkipToNextException:
                     current_step_increment += 1
                     choose_parser_for[get_step()](line)
+        print(f'final parsed: {parsed_recipe}')
         return parsed_recipe
 
     # TODO: next: add known parts, were if we know something is say, a garnish, we proces and remove it from the list
