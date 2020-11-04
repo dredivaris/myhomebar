@@ -1,4 +1,5 @@
 import json
+from string import capwords
 
 import graphene
 import requests
@@ -11,11 +12,11 @@ from graphene_file_upload.scalars import Upload
 
 from api.domain import create_recipe, create_recipe_from_plaintext, save_recipe_from_parsed_recipes, \
     tokenize_recipes_from_plaintext, update_recipe, merge_ingredients_and_update_models
-from api.models import Pantry, Ingredient, PantryIngredient, IngredientToIngredient
+from api.models import Pantry, Ingredient, PantryIngredient, IngredientToIngredient, Recipe
 from api.types import AddRecipeResponseGraphql, AddRecipesFromTextResponseGraphql, \
     LinkOrCreateIngredientsForPantryResponseGraphql, AddRecipeFlexibleResponseGraphql, \
     IngredientBulkUpdateResponseGraphql, IngredientCreateResponseGraphql, \
-    ToggleStockResponseGraphql, EditIngredientFlexibleResponseGraphql
+    ToggleStockResponseGraphql, EditIngredientFlexibleResponseGraphql, DeleteRecipeResponseGraphql
 
 from django.contrib.auth import get_user_model
 
@@ -65,6 +66,7 @@ class AddRecipeFlexible(graphene.Mutation):
         source = graphene.String()
         source_url = graphene.String()
         shortlist = graphene.Boolean()
+        non_alcoholic = graphene.Boolean()
 
     Output = AddRecipeFlexibleResponseGraphql
 
@@ -95,6 +97,20 @@ class AddRecipeFlexible(graphene.Mutation):
         update_recipe(args, owner)
 
         return AddRecipeFlexibleResponseGraphql(1)
+
+
+class DeleteRecipe(graphene.Mutation):
+    class Arguments:
+        id = graphene.Int(required=True)
+
+    Output = DeleteRecipeResponseGraphql
+
+    def mutate(self, info, id):
+        try:
+            Recipe.objects.get(id=id).delete()
+            return DeleteRecipeResponseGraphql(deleted=True)
+        except Recipe.DoesNotExist:
+            return DeleteRecipeResponseGraphql(deleted=False)
 
 
 class AddRecipe(graphene.Mutation):
@@ -291,7 +307,7 @@ class IngredientCreate(graphene.Mutation):
             return IngredientCreateResponseGraphql(created=False)
 
         # TODO: handle auth
-        ingredient = Ingredient.objects.create(name=name.title(),
+        ingredient = Ingredient.objects.create(name=capwords(name),
                                                is_garnish=is_garnish,
                                                owner=User.objects.first())
         if add_to_pantry:
@@ -362,6 +378,7 @@ class EditIngredientFlexible(graphene.Mutation):
 class Mutation(object):
     add_recipe = AddRecipe.Field()
     add_recipe_flexible = AddRecipeFlexible.Field()
+    delete_recipe = DeleteRecipe.Field()
     create_user = CreateUser.Field()
     add_recipes_from_text = AddRecipesFromText.Field()
     link_or_create_ingredients_for_pantry = LinkOrCreateIngredientsForPantry.Field()
