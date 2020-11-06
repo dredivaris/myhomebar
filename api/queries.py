@@ -71,7 +71,7 @@ class RecipeType(DjangoObjectType):
     all_ingredients = graphene.List(graphene.String)
 
     def resolve_all_ingredients(self, info):
-        return [str(i) for i in self.recipeingredient_set.all() if not i.ingredient.is_garnish]
+        return [str(i) for i in self.recipeingredient_set.all() if not i.is_garnish]
 
     ingredients_text = graphene.String()
 
@@ -85,7 +85,7 @@ class RecipeType(DjangoObjectType):
     garnishes = graphene.List(graphene.String)
 
     def resolve_garnishes(self, info):
-        return [i for i in self.recipeingredient_set.all() if i.ingredient.is_garnish]
+        return [i for i in self.recipeingredient_set.all() if i.is_garnish]
 
     missing_ingredients = graphene.String()
 
@@ -203,15 +203,16 @@ class Query(object):
 
         # handle possible url
         validator = URLValidator()
-        try:
-            validator(search_term)
-        except ValidationError:
-            pass
-        else:
-            # add new recipe and search on all
-            recipe = create_recipe_from_url(search_term)
-            save_recipe_from_parsed_recipes(recipe)
-            search_term = ''
+        if search_term:
+            try:
+                validator(search_term)
+            except ValidationError:
+                pass
+            else:
+                # add new recipe and search on all
+                recipe = create_recipe_from_url(search_term)
+                save_recipe_from_parsed_recipes(recipe)
+                search_term = ''
 
         vectors = SearchVector('name', config='english_unaccent') + \
                   SearchVector('ingredients__name', config='english_unaccent') + \
