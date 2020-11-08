@@ -140,6 +140,106 @@ def _filter_on_pantry(current_filtered, user, allowances=0):
     return filtered
 
 
+def get_searched_recipes(info, search_term, allowances, shortlist, get_count=False):
+    print(search_term)
+    # TODO: add ability for multiple search filters via commas or semicolons
+    def get_in_quotes_and_whats_left(text):
+        found = re.findall('"([^"]*)"', text)
+        left = re.sub('"([^"]*)"', '', text)
+        return found, left
+
+    # handle possible url
+    validator = URLValidator()
+    if search_term:
+        try:
+            validator(search_term)
+        except ValidationError:
+            pass
+        else:
+            # add new recipe and search on all
+            recipe = create_recipe_from_url(search_term)
+            save_recipe_from_parsed_recipes(recipe)
+            search_term = ''
+
+    vectors = SearchVector('name', config='english_unaccent') + \
+              SearchVector('ingredients__name', config='english_unaccent') + \
+              SearchVector('source', config='english_unaccent') + \
+              SearchVector('source_url', config='english_unaccent')
+
+    exact_ids = None
+    if not search_term:
+        current_filtered = Recipe.objects.all()\
+            .prefetch_related(
+                Prefetch('ingredients', to_attr='ingredient_list',
+                         queryset=Ingredient.objects.all().only('name', 'is_garnish')))\
+            .order_by('-id')\
+            .only('id', 'source', 'source_url', 'name', 'shortlist', 'rating', 'non_alcoholic')
+    else:
+        recipes = Recipe.objects.all().prefetch_related(
+                Prefetch('ingredients', to_attr='ingredient_list',
+                         queryset=Ingredient.objects.all().only('name', 'is_garnish')))
+
+        if '"' in search_term:
+            if Counter(search_term)['"'] % 2 != 0:
+                return None
+
+            exact_matches, non_exact = get_in_quotes_and_whats_left(search_term)
+            search_term = non_exact.strip()
+            if exact_matches:
+                exact_ids = set()
+                for match in exact_matches:
+                    recipes = Recipe.objects.all()
+                    if exact_ids:
+                        recipes.filter(id__in=exact_ids)
+                    recipes = recipes.annotate(search=vectors)\
+                        .filter(search=SearchQuery(match, search_type='phrase',
+                                                   config='english_unaccent'))
+                    if exact_ids:
+                        exact_ids = exact_ids & set(recipes.values_list('id', flat=True))
+                    else:
+                        exact_ids = set(recipes.values_list('id', flat=True))
+
+        ids = recipes.annotate(search=vectors)\
+            .filter(search__icontains=search_term)\
+            .values_list('id', flat=True)
+
+        search_terms = search_term.split()
+        # if we want to filter on individual terms using OR
+        # my_filter = search_term
+        # if search_terms:
+        #     my_filter = SearchQuery(search_terms.pop())
+        #     for t in search_terms:
+        #         my_filter &= SearchQuery(t)
+
+        extra_ids = []
+        for term in search_terms:
+            extra = Recipe.objects.annotate(search=vectors)\
+                .filter(search__icontains=term).values_list('id', flat=True)
+            extra_ids += extra
+
+        final_ids = Recipe.objects\
+            .annotate(search=vectors)\
+            .filter(search=SearchQuery(search_term)).values_list('id', flat=True)
+
+        ids = set(ids) | set(extra_ids) | set(final_ids)
+        if exact_ids:
+            ids = ids & exact_ids
+        current_filtered = Recipe.objects.filter(id__in=ids)\
+            .prefetch_related(
+                Prefetch('ingredients', to_attr='ingredient_list',
+                         queryset=Ingredient.objects.all()
+            .only('name', 'is_garnish'))).order_by('-id')
+    if shortlist:
+        current_filtered = current_filtered.filter(shortlist=True)
+    if allowances != -1:
+        # TODO: add auth!
+        current_filtered = _filter_on_pantry(current_filtered, User.objects.first(),
+                                             allowances=allowances)
+    if get_count:
+        return current_filtered.count()
+    return current_filtered
+
+
 class Query(object):
     all_ingredients = graphene.List(IngredientType)
 
@@ -189,106 +289,29 @@ class Query(object):
         return Recipe.objects.get(pk=id)
 
     searched_recipes = graphene.List(RecipeType,
+                                     first=graphene.Int(required=True),
+                                     page=graphene.Int(required=True),
                                      search_term=graphene.String(required=False),
                                      allowances=graphene.Int(required=False),
                                      shortlist=graphene.Boolean(required=False))
 
-    def resolve_searched_recipes(self, info, search_term=None, allowances=0, shortlist=False):
-        print(search_term)
-        # TODO: add ability for multiple search filters via commas or semicolons
-        def get_in_quotes_and_whats_left(text):
-            found = re.findall('"([^"]*)"', text)
-            left = re.sub('"([^"]*)"', '', text)
-            return found, left
+    def resolve_searchemd_recipes(self, info, first, page, search_term=None, allowances=0,
+                                 shortlist=False):
+        recipes = get_searched_recipes(info, search_term, allowances, shortlist)
 
-        # handle possible url
-        validator = URLValidator()
-        if search_term:
-            try:
-                validator(search_term)
-            except ValidationError:
-                pass
-            else:
-                # add new recipe and search on all
-                recipe = create_recipe_from_url(search_term)
-                save_recipe_from_parsed_recipes(recipe)
-                search_term = ''
+        from django.core.paginator import Paginator
+        paginator = Paginator(recipes, first)
+        current_page = page//first
+        return paginator.page(current_page+1).object_list
 
-        vectors = SearchVector('name', config='english_unaccent') + \
-                  SearchVector('ingredients__name', config='english_unaccent') + \
-                  SearchVector('source', config='english_unaccent') + \
-                  SearchVector('source_url', config='english_unaccent')
 
-        exact_ids = None
-        if not search_term:
-            current_filtered = Recipe.objects.all()\
-                .prefetch_related(
-                    Prefetch('ingredients', to_attr='ingredient_list',
-                             queryset=Ingredient.objects.all().only('name', 'is_garnish')))\
-                .order_by('-id')\
-                .only('id', 'source', 'source_url', 'name', 'shortlist', 'rating', 'non_alcoholic')
-        else:
-            recipes = Recipe.objects.all().prefetch_related(
-                    Prefetch('ingredients', to_attr='ingredient_list',
-                             queryset=Ingredient.objects.all().only('name', 'is_garnish')))
+    searched_recipes_count = graphene.Int(search_term=graphene.String(required=False),
+                                          allowances=graphene.Int(required=False),
+                                          shortlist=graphene.Boolean(required=False))
 
-            if '"' in search_term:
-                if Counter(search_term)['"'] % 2 != 0:
-                    return None
-
-                exact_matches, non_exact = get_in_quotes_and_whats_left(search_term)
-                search_term = non_exact.strip()
-                if exact_matches:
-                    exact_ids = set()
-                    for match in exact_matches:
-                        recipes = Recipe.objects.all()
-                        if exact_ids:
-                            recipes.filter(id__in=exact_ids)
-                        recipes = recipes.annotate(search=vectors)\
-                            .filter(search=SearchQuery(match, search_type='phrase',
-                                                       config='english_unaccent'))
-                        if exact_ids:
-                            exact_ids = exact_ids & set(recipes.values_list('id', flat=True))
-                        else:
-                            exact_ids = set(recipes.values_list('id', flat=True))
-
-            ids = recipes.annotate(search=vectors)\
-                .filter(search__icontains=search_term)\
-                .values_list('id', flat=True)
-
-            search_terms = search_term.split()
-            # if we want to filter on individual terms using OR
-            # my_filter = search_term
-            # if search_terms:
-            #     my_filter = SearchQuery(search_terms.pop())
-            #     for t in search_terms:
-            #         my_filter &= SearchQuery(t)
-
-            extra_ids = []
-            for term in search_terms:
-                extra = Recipe.objects.annotate(search=vectors)\
-                    .filter(search__icontains=term).values_list('id', flat=True)
-                extra_ids += extra
-
-            final_ids = Recipe.objects\
-                .annotate(search=vectors)\
-                .filter(search=SearchQuery(search_term)).values_list('id', flat=True)
-
-            ids = set(ids) | set(extra_ids) | set(final_ids)
-            if exact_ids:
-                ids = ids & exact_ids
-            current_filtered = Recipe.objects.filter(id__in=ids)\
-                .prefetch_related(
-                    Prefetch('ingredients', to_attr='ingredient_list',
-                             queryset=Ingredient.objects.all()
-                .only('name', 'is_garnish'))).order_by('-id')
-        if shortlist:
-            current_filtered = current_filtered.filter(shortlist=True)
-        if allowances != -1:
-            # TODO: add auth!
-            current_filtered = _filter_on_pantry(current_filtered, User.objects.first(),
-                                                 allowances=allowances)
-        return current_filtered
+    def resolve_searched_recipes_count(self, info, search_term=None, allowances=0, shortlist=False):
+        return get_searched_recipes(
+            info, search_term, allowances, shortlist, get_count=True)
 
     recipe = graphene.Field(RecipeType, recipe_id=graphene.Int(required=True))
 
