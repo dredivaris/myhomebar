@@ -10,6 +10,7 @@ from django.contrib.auth.models import User
 from django.contrib.postgres.search import SearchVector, SearchQuery
 from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
+from django.core.paginator import Paginator
 from django.db.models import Prefetch
 from graphene import ObjectType
 
@@ -137,6 +138,14 @@ def _filter_on_pantry(current_filtered, user, allowances=0):
             recipe.missing_ingredient_models = missing_ingredients
         if in_pantry:
             filtered.append(recipe)
+    return filtered
+
+
+def filter_ingredients(is_garnish, search_term):
+    if search_term is None:
+        return Ingredient.objects.filter(is_garnish=is_garnish)
+    filtered = Ingredient.objects.filter(is_garnish=is_garnish)
+    filtered = filtered.filter(name__icontains=search_term)
     return filtered
 
 
@@ -298,8 +307,6 @@ class Query(object):
     def resolve_searched_recipes(self, info, first, page, search_term=None, allowances=0,
                                  shortlist=False):
         recipes = get_searched_recipes(info, search_term, allowances, shortlist)
-
-        from django.core.paginator import Paginator
         paginator = Paginator(recipes, first)
         current_page = page//first
         return paginator.page(current_page+1).object_list
@@ -332,19 +339,30 @@ class Query(object):
 
     # TODO: add pantry filter search
 
+    get_filtered_ingredients_count = graphene.Int(is_garnish=graphene.Boolean(required=False),
+                                                  search_term=graphene.String(required=False))
+
+    def resolve_get_filtered_ingredients_count(self, info, is_garnish=False, search_term=None):
+        ingredients = filter_ingredients(is_garnish, search_term)
+        return ingredients.count()
+
+
     filtered_ingredients = graphene.List(IngredientType,
+                                         first=graphene.Int(required=True),
+                                         page=graphene.Int(required=True),
                                          is_garnish=graphene.Boolean(required=False),
                                          search_term=graphene.String(required=False))
 
-    def resolve_filtered_ingredients(self, info, is_garnish=False, search_term=None):
-        if search_term is None:
-            return Ingredient.objects.filter(is_garnish=is_garnish)
-
-        filtered = Ingredient.objects.filter(is_garnish=is_garnish)
-        filtered = filtered.filter(name__icontains=search_term)
-        return filtered
+    def resolve_filtered_ingredients(self, info, first, page, is_garnish=False, search_term=None):
+        ingredients = filter_ingredients(is_garnish, search_term)
+        paginator = Paginator(ingredients, first)
+        current_page = page//first
+        return paginator.page(current_page+1).object_list
 
     get_ingredient = graphene.Field(IngredientType, id=graphene.Int(required=True))
 
     def resolve_get_ingredient(self, info, id):
         return Ingredient.objects.get(id=id)
+
+    # {{recipeTable.pageSize}}
+    # {{recipeTable.paginationOffset}}
