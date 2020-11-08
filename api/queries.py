@@ -295,7 +295,7 @@ class Query(object):
                                      allowances=graphene.Int(required=False),
                                      shortlist=graphene.Boolean(required=False))
 
-    def resolve_searchemd_recipes(self, info, first, page, search_term=None, allowances=0,
+    def resolve_searched_recipes(self, info, first, page, search_term=None, allowances=0,
                                  shortlist=False):
         recipes = get_searched_recipes(info, search_term, allowances, shortlist)
 
