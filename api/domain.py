@@ -1,5 +1,6 @@
 import math
 import re
+import unicodedata
 from collections import Counter
 from dataclasses import dataclass
 from decimal import Decimal
@@ -111,7 +112,8 @@ def is_directions_classifier(text):
         return counts, len(pos)
 
     def clean_text(text):
-        text = text.lower()
+        # text = text.lower()
+        text = text[0].lower() + text[1:]
         if len(text) > 7:
             text_start, text_end = text[:7], text[7:]
         else:
@@ -120,7 +122,10 @@ def is_directions_classifier(text):
         return text_start + text_end
 
     def has_unit(text):
-        return bool(Ingreedy().parse(clean_text(text))['quantity'])
+        try:
+            return bool(Ingreedy().parse(clean_text(text))['quantity'])
+        except Exception:
+            return False
 
     if len(lines) > 1 and not has_unit(text):
         return True
@@ -131,17 +136,21 @@ def is_directions_classifier(text):
         line, has_parens = remove_all_text_in_parens(line)
         tag_counts, length = tag_count_line(line)
 
-        has_starting_number = line.split()[0].replace('.', '', 1).replace('/', '', 1).isdigit()
+        has_starting_number = is_numeric(line.split()[0].replace('.', '', 1).replace('/', '', 1)[0])
         # has_comma = ',' in tag_counts
         # has_sentence_delimiters = any(delimiter in tag_counts for delimiter in ('.', '?', '!'))
         # has_verb = any(vb in tag_counts for vb in ('VB', 'VBD', 'VBG', 'VBN', 'VBP', 'VBZ'))
         tags = set(tag_counts)
         difference = tags - POS_COMMONLY_FOUND_IN_INGREDIENTS
         has_two_or_more_non_ingredient_tags = len(difference) >= 2
-        numerous_words_weight = max((length - 3), 0)*.5
+        numerous_words_weight = max((length - 3), 0)*.4
+        has_garnish = 'garnish' in line.lower()
+        has_bitters = 'bitters' in line.lower()
 
         HAS_STARTING_NUMBER = -2
         HAS_UNIT = -2
+        HAS_GARNISH = -2
+        HAS_BITTERS = -1.5
 
         count = 0
         if has_starting_number:
@@ -150,6 +159,10 @@ def is_directions_classifier(text):
             count += HAS_UNIT
         if has_two_or_more_non_ingredient_tags:
             count += len(difference)
+        if has_garnish:
+            count += HAS_GARNISH
+        if has_bitters:
+            count += HAS_BITTERS
 
         count += numerous_words_weight
 
@@ -245,6 +258,8 @@ def plaintext_garnish_handler(recipe, line):
     # TODO probably want to make into rule table
     if 'garnish:' in line.lower():
         add_to_garnish(line.lower().replace('garnish:', '').strip())
+    elif ', for garnish' in line.lower():
+        add_to_garnish(line.lower().replace(', for garnish', '').strip())
     elif '(as garnish)' in line.lower():
         add_to_garnish(line.lower().replace('(as garnish)', ''))
     elif '(wheel, as garnish)' in line.lower():
@@ -346,15 +361,39 @@ def remove_prefix(text, prefix):
 
 def clean_extras(line):
     extras = set()
-    line = line.lower()
+    # line = line.lower()
     if line.startswith('+'):
         extras.add('+')
     elif line.startswith('-'):
         extras.add('-')
     elif line.startswith('scant'):
         extras.add('-')
-    line = line.lstrip('+-scant').strip()
+    line = line.lstrip('+-').strip()
+    line = remove_prefix(line, 'scant').strip()
     return line, extras
+
+
+def is_vulgar_fraction(character):
+    name = unicodedata.name(character)
+    return name.startswith('VULGAR FRACTION')
+
+
+def is_numeric(character):
+    if character.isdigit():
+        return True
+    else:
+        return is_vulgar_fraction(character)
+
+
+def fix_vulgar_fractions(line):
+    replacements = []
+    for i, a in enumerate(line):
+        name = unicodedata.name(a)
+        if name.startswith('VULGAR FRACTION'):
+            replacements.append(i)
+    for r in replacements:
+        line = line[:r] + ' ' + line[r:]
+    return line
 
 
 def handle_ingredient(recipe, line):
@@ -364,7 +403,8 @@ def handle_ingredient(recipe, line):
         return
 
     print('to parse ingreedy: ', line)
-    parsed_ingredient = Ingreedy().parse(line)
+    line = fix_vulgar_fractions(line)
+    parsed_ingredient = Ingreedy().parse(line.strip())
     try:
         parsed_ingredient['quantity'][0]['amount'] = \
             _convert_to_fractional_text(parsed_ingredient['quantity'][0]['amount'])
@@ -409,6 +449,7 @@ def create_recipe_from_plaintext(text):
     title_line = lines[0]
     lines = clean_lines(lines)
 
+    in_notes = False
     possible_url = is_url_then_recipe(lines)
     if not possible_url:
         possible_url = title_line.split()[-1]
@@ -486,9 +527,13 @@ def create_recipe_from_plaintext(text):
     for line in lines[index:]:
         if line.lower().startswith('garnish'):
             recipe.garnish = line
-        elif line.startswith('NOTE') or line.startswith('NOTES'):
-            recipe.notes = remove_prefix(line, 'NOTES').strip()
-            recipe.notes = remove_prefix(recipe.notes, 'NOTE').strip()
+        elif in_notes or line.startswith('NOTE') or line.startswith('NOTES'):
+            in_notes = True
+            if not recipe.notes:
+                recipe.notes = remove_prefix(line, 'NOTES').strip()
+                recipe.notes = remove_prefix(recipe.notes, 'NOTE').strip()
+            else:
+                recipe.notes += f'\n{line.strip()}'
         else:
             directions.append(line)
     directions = '\n'.join(directions)
