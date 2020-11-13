@@ -245,7 +245,6 @@ class LinkOrCreateIngredientsForPantry(graphene.Mutation):
                 ingredient = Ingredient.objects.create(
                     name=new_ingredient,
                     owner_id=1,  # TODO: implement proper login!
-                    is_garnish=False
                 )
                 new_ingredient_ids.append(ingredient.id)
 
