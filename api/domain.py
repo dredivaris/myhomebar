@@ -113,6 +113,7 @@ def is_directions_classifier(text):
 
     def clean_text(text):
         # text = text.lower()
+        text = text.replace('⁄', '/')
         text = text[0].lower() + text[1:]
         if len(text) > 7:
             text_start, text_end = text[:7], text[7:]
@@ -123,8 +124,7 @@ def is_directions_classifier(text):
 
     def has_unit(text):
         try:
-            return bool(Ingreedy().parse(clean_text(text))['quantity']) and \
-                   bool(Ingreedy().parse(clean_text(text))['unit'])
+            return bool(Ingreedy().parse(clean_text(text))['quantity'])
         except Exception:
             return False
 
@@ -466,6 +466,7 @@ def create_recipe_from_plaintext(text):
     else:
         lines.pop(0)
         title_line = lines[0]
+        recipe.url_link = possible_url
 
     # parse out possible reference
     reference = get_text_within_parens(title_line)
@@ -484,14 +485,6 @@ def create_recipe_from_plaintext(text):
         recipe.title = title_line
 
     lines = lines[1:]
-
-    # if lines[0].lstrip().startswith('DESCRIPTION'):
-    #     recipe.description = lines[0].replace('DESCRIPTION', '').strip()
-    #     lines = lines[1:]
-    #
-    # if lines[0].lstrip().startswith('GLASSWARE'):
-    #     recipe.glassware = lines[0].replace('GLASSWARE', '').strip()
-    #     lines = lines[1:]
 
     recipe.ingredients = []
     index = 0
@@ -524,20 +517,8 @@ def create_recipe_from_plaintext(text):
 
         if recipe.garnish:
             print('done')
-    directions = []
-    for line in lines[index:]:
-        if line.lower().startswith('garnish'):
-            recipe.garnish = line
-        elif in_notes or line.startswith('NOTE') or line.startswith('NOTES'):
-            in_notes = True
-            if not recipe.notes:
-                recipe.notes = remove_prefix(line, 'NOTES').strip()
-                recipe.notes = remove_prefix(recipe.notes, 'NOTE').strip()
-            else:
-                recipe.notes += f'\n{line.strip()}'
-        else:
-            directions.append(line)
-    directions = '\n'.join(directions)
+
+    directions = handle_garnish_notes(in_notes, index, lines, recipe)
 
     recipe.directions = directions
     if (not recipe.garnish and any(text in recipe.directions.lower()
@@ -553,6 +534,24 @@ def create_recipe_from_plaintext(text):
         if text_to_find:
             recipe.garnish = directions[directions.find(text_to_find) + len(text_to_find):].strip()
     return recipe
+
+
+def handle_garnish_notes(in_notes, index, lines, recipe):
+    directions = []
+    for line in lines[index:]:
+        if line.lower().startswith('garnish'):
+            recipe.garnish = line
+        elif in_notes or line.startswith('NOTE') or line.startswith('NOTES'):
+            in_notes = True
+            if not recipe.notes:
+                recipe.notes = remove_prefix(line, 'NOTES').strip()
+                recipe.notes = remove_prefix(recipe.notes, 'NOTE').strip()
+            else:
+                recipe.notes += f'\n{line.strip()}'
+        else:
+            directions.append(line)
+    directions = '\n'.join(directions)
+    return directions
 
 
 def convert_ingredient(ingredient, recipe):
