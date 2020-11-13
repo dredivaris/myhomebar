@@ -123,7 +123,8 @@ def is_directions_classifier(text):
 
     def has_unit(text):
         try:
-            return bool(Ingreedy().parse(clean_text(text))['quantity'])
+            return bool(Ingreedy().parse(clean_text(text))['quantity']) and \
+                   bool(Ingreedy().parse(clean_text(text))['unit'])
         except Exception:
             return False
 
