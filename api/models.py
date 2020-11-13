@@ -35,7 +35,7 @@ class Ingredient(models.Model):
     owner = models.ForeignKey(User, on_delete=models.CASCADE)
     categories = models.ManyToManyField('self', blank=True, null=True, symmetrical=False,
                                         through='api.IngredientToIngredient')
-    is_garnish = models.BooleanField(default=False)
+    is_garnish = models.BooleanField(default=False)  # used for display purposes
     is_generic = models.BooleanField(default=False)
 
     # objects = IngredientManager()
@@ -243,6 +243,7 @@ class RecipeIngredient(models.Model):
     beverage = models.ForeignKey(Recipe, on_delete=models.CASCADE)
     quantity = models.ForeignKey(Quantity, null=True, blank=True, on_delete=models.CASCADE)
     note = models.TextField(null=True)
+    is_garnish = models.BooleanField(default=False)
 
     def __str__(self):
         if self.quantity:
