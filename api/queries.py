@@ -170,10 +170,11 @@ def get_searched_recipes(info, search_term, allowances, shortlist, get_count=Fal
             save_recipe_from_parsed_recipes(recipe)
             search_term = ''
 
-    vectors = SearchVector('name', config='english_unaccent') + \
-              SearchVector('ingredients__name', config='english_unaccent') + \
-              SearchVector('source', config='english_unaccent') + \
-              SearchVector('source_url', config='english_unaccent')
+    vectors = SearchVector('name', config='english_unaccent', weight='A') + \
+              SearchVector('ingredients__name', config='english_unaccent', weight='A') + \
+              SearchVector('recipeingredient__note', config='english_unaccent', weight='B') + \
+              SearchVector('source', config='english_unaccent', weight='B') + \
+              SearchVector('source_url', config='english_unaccent', weight='B')
 
     exact_ids = None
     if not search_term:
