@@ -37,6 +37,10 @@ custom_ingredient_grammar = Grammar(
         amount_imprecise
         = imprecise_unit !letter
 
+        # Pinch
+        amount_imprecise
+        = imprecise_unit !letter
+
         parenthesized_quantity
         = open amount_with_attached_units close
 
@@ -222,11 +226,11 @@ custom_ingredient_grammar = Grammar(
 
         imprecise_unit
         = dash
+        / ds
         / handful
         / pinch
         / touch
         / rinse
-        / dr
         / twst
         / t
 
@@ -242,6 +246,9 @@ custom_ingredient_grammar = Grammar(
         = "pinches"
         / "pinch"
 
+        ds
+        = "ds"
+
         touch
         = "touches"
         / "touch"
@@ -249,11 +256,7 @@ custom_ingredient_grammar = Grammar(
         rinse
         = "rinses"
         / "rinse"
-        
-        dr
-        = "drs"
-        / "dr"
-        
+                
         twst
         = "twsts"
         / "twst"
@@ -318,7 +321,8 @@ custom_ingredient_grammar = Grammar(
         """)
 
 replacement_mapper = {
-    '⁄': '/'
+    '⁄': '/',
+    'OZ.': 'oz',
 }
 
 
