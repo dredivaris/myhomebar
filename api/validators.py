@@ -162,13 +162,20 @@ class RecipeValidator(object):
                 ingredient_instance, created = Ingredient.objects.get_or_create(
                     name=capwords(' '.join((specific_ingredient, base_ingredient))),
                     owner=self.user)
-                IngredientToIngredient.objects.get_or_create(child=ingredient_instance,
-                                                             parent_id=base.id)
+                try:
+                    IngredientToIngredient.objects.get_or_create(child=ingredient_instance,
+                                                                 parent_id=base.id)
+                except IngredientToIngredient.MultipleObjectsReturned:
+                    all_rels = IngredientToIngredient.objects.filter(child=ingredient_instance,
+                                                                     parent_id=base.id)
+                    all_rels[1].delete()
+
             else:
                 ingredient_instance, _ = Ingredient.objects.get_or_create(
                     name=capwords(ingredient['ingredient']), owner=self.user)
         except Exception as e:
-            breakpoint()
+            print(f'Error: issue in save_and_add_ingredient, for {ingredient["ingredient"]}, base: {base_ingredient}, joined: {capwords(" ".join((specific_ingredient, base_ingredient)))}, {e}')
+
         ri = RecipeIngredient(
             ingredient=ingredient_instance,
             beverage=self.recipe,
@@ -194,14 +201,15 @@ class RecipeValidator(object):
                 ri = RecipeIngredient(
                     ingredient=ingredient,
                     beverage=self.recipe,
+                    is_garnish=True,
                 )
                 ri.save()
             try:
                 RecipeIngredient.objects.create(
                     ingredient=ingredient,
                     beverage=self.recipe,
+                    is_garnish=True,
                     quantity=Quantity.objects.get_or_create(amount=1, divisor=None, unit=None)[0]
                 )
-            except:
-                import pdb
-                pdb.set_trace()
+            except Exception as e:
+                print(f'Error: problem creating RecipeIngredient {ingredient}, {e}')
