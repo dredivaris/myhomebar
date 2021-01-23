@@ -36,9 +36,9 @@ def fix_spaced_fraction(ingredient):
     return ingredient
 
 
-def create_recipe_from_yaml(yaml_dict):
+def create_recipe_from_yaml(yaml_dict, default_source):
     name = yaml_dict['name']
-    raw_source = yaml_dict['source']
+    raw_source = yaml_dict['source'] or default_source
 
     validator = URLValidator()
     source_url, source = None, None
@@ -69,7 +69,7 @@ def create_recipe_from_yaml(yaml_dict):
         'garnish': None,
         # 'rating': parsed.rating,
         'directions': yaml_dict['directions'],
-        'description': yaml_dict['notes'],
+        'description': yaml_dict.get('notes', None),
         'recipe_type': Recipe.COCKTAIL,
     }
 
@@ -123,7 +123,7 @@ def create_recipe_from_yaml(yaml_dict):
     recipe_validator.save()
 
 
-def import_all_yaml_files_in_yaml_dir(directory):
+def import_all_yaml_files_in_yaml_dir(directory, default_source):
     for filename in os.listdir(directory):
         if filename.endswith('.yml'):
             if not directory.endswith('/'):
@@ -131,4 +131,4 @@ def import_all_yaml_files_in_yaml_dir(directory):
             parsed = parse_yaml_file(directory + filename)
             # print(directory+filename)
             # print(parsed)
-            create_recipe_from_yaml(parsed)
+            create_recipe_from_yaml(parsed, default_source)
