@@ -1,4 +1,4 @@
-version: '3'
+version: '3.8'
 
 services:
   db:
@@ -6,11 +6,17 @@ services:
     image: postgres:13
     environment:
       POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
     networks:
       - psql-pgql
+    volumes:
+      - homebardatavol:/var/lib/postgresql/data
   web:
     container_name: web
     build: .
+#    image: dredivaris/homebar:latest
+#    x-aws-pull_credentials: arn:aws:secretsmanager:us-west-1:713522845271:secret:dockerhubAccessToken-mc0YRs
     command: python manage.py runserver 0.0.0.0:8000
     volumes:
       - .:/code
@@ -24,20 +30,20 @@ services:
     tty: true
   graphql:
     container_name: pgql
-    restart: always
+#    restart: always
     image: graphile/postgraphile:4-5-4
     depends_on:
       - db
     environment:
       DATABASE_URL: postgres://postgres:postgres@db:5432/postgres # To be moved to environment file
-    expose:
-      - 5000
+#    expose:
+#      - 5000
     ports:
       - 5000:5000
     command: ["--connection", $DATABASE_URL, "--host", "0.0.0.0", "--port", "5000",
               "--schema", "public", "--enhance-graphiql", "-w", "--cors"]
-    links:
-      - db
+#    links:
+#      - db
     networks:
       - psql-pgql
 networks:
