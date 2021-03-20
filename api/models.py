@@ -94,6 +94,7 @@ class Recipe(models.Model):
     # TODO: when supporting multiple users this field may need to go on a user specific model
     # will probably want something equivalent to a user pantry (recipe book) to hold recipes
     shortlist = models.BooleanField(default=False)
+    today = models.BooleanField(default=False)
 
     def __str__(self):
         return self.name
@@ -180,8 +181,7 @@ class Quantity(models.Model):
                 result, _ = cls.objects.get_or_create(amount=dividend_divisor[0],
                                                       divisor=None, unit=unit)
             except Exception as e:
-                import pdb
-                pdb.set_trace()
+                print(f'Error: cant create quantity {dividend_divisor}, {unit}, {e}')
 
         else:
             result, _ = cls.objects.get_or_create(amount=dividend_divisor[0],
