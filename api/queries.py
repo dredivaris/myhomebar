@@ -149,7 +149,7 @@ def filter_ingredients(is_garnish, search_term):
     return filtered
 
 
-def get_searched_recipes(info, search_term, allowances, shortlist, today,
+def get_searched_recipes(info, search_term, allowances, shortlist, today, partner_likes,
                          get_count=False, sorted_by=None, desc=None):
     print(search_term)
     # TODO: add ability for multiple search filters via commas or semicolons
@@ -245,6 +245,8 @@ def get_searched_recipes(info, search_term, allowances, shortlist, today,
         current_filtered = current_filtered.filter(shortlist=True)
     if today:
         current_filtered = current_filtered.filter(today=True)
+    if partner_likes:
+        current_filtered = current_filtered.filter(partner_likes=True)
 
     # sorted by:
     # name, ingredientsText, rating, source
@@ -318,13 +320,15 @@ class Query(object):
                                      allowances=graphene.Int(required=False),
                                      shortlist=graphene.Boolean(required=False),
                                      today=graphene.Boolean(required=False),
+                                     partner_likes=graphene.Boolean(required=False),
                                      sorted_by=graphene.String(required=False),
                                      desc=graphene.Boolean(required=False))
 
     def resolve_searched_recipes(self, info, first, page, search_term=None, allowances=0,
-                                 shortlist=False, today=False, sorted_by=None, desc=None):
+                                 shortlist=False, today=False, partner_likes=False, sorted_by=None,
+                                 desc=None):
         recipes = get_searched_recipes(info, search_term, allowances, shortlist, today,
-                                       sorted_by=sorted_by, desc=desc)
+                                       partner_likes, sorted_by=sorted_by, desc=desc)
 
         paginator = Paginator(recipes, first)
         current_page = page//first
@@ -334,12 +338,13 @@ class Query(object):
     searched_recipes_count = graphene.Int(search_term=graphene.String(required=False),
                                           allowances=graphene.Int(required=False),
                                           shortlist=graphene.Boolean(required=False),
-                                          today=graphene.Boolean(required=False))
+                                          today=graphene.Boolean(required=False),
+                                          partner_likes=graphene.Boolean(required=False))
 
     def resolve_searched_recipes_count(self, info, search_term=None, allowances=0,
-                                       shortlist=False, today=False):
+                                       shortlist=False, today=False, partner_likes=None):
         return get_searched_recipes(
-            info, search_term, allowances, shortlist, today, get_count=True)
+            info, search_term, allowances, shortlist, today, partner_likes, get_count=True)
 
     recipe = graphene.Field(RecipeType, recipe_id=graphene.Int(required=True))
 

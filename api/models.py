@@ -86,6 +86,7 @@ class Recipe(models.Model):
     glassware = models.CharField(max_length=100, null=True)
     tools = models.CharField(max_length=300, null=True)
     rating = models.FloatField(null=True, blank=True)
+    partner_likes = models.BooleanField(default=False)
     non_alcoholic = models.BooleanField(default=False)
     notes = models.TextField(null=True, blank=True)
     date_added = models.DateTimeField(auto_now=True)
