@@ -11,7 +11,7 @@ from django.contrib.postgres.search import SearchVector, SearchQuery
 from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
 from django.core.paginator import Paginator
-from django.db.models import Prefetch
+from django.db.models import Prefetch, F
 from graphene import ObjectType
 
 from graphene_django.types import DjangoObjectType
@@ -149,7 +149,8 @@ def filter_ingredients(is_garnish, search_term):
     return filtered
 
 
-def get_searched_recipes(info, search_term, allowances, shortlist, get_count=False):
+def get_searched_recipes(info, search_term, allowances, shortlist, today,
+                         get_count=False, sorted_by=None, desc=None):
     print(search_term)
     # TODO: add ability for multiple search filters via commas or semicolons
     def get_in_quotes_and_whats_left(text):
@@ -183,7 +184,8 @@ def get_searched_recipes(info, search_term, allowances, shortlist, get_count=Fal
                 Prefetch('ingredients', to_attr='ingredient_list',
                          queryset=Ingredient.objects.all().only('name', 'is_garnish')))\
             .order_by('-id')\
-            .only('id', 'source', 'source_url', 'name', 'shortlist', 'rating', 'non_alcoholic')
+            .only('id', 'source', 'source_url', 'name', 'shortlist', 'today',
+                  'rating', 'non_alcoholic')
     else:
         recipes = Recipe.objects.all().prefetch_related(
                 Prefetch('ingredients', to_attr='ingredient_list',
@@ -241,6 +243,17 @@ def get_searched_recipes(info, search_term, allowances, shortlist, get_count=Fal
             .only('name', 'is_garnish'))).order_by('-id')
     if shortlist:
         current_filtered = current_filtered.filter(shortlist=True)
+    if today:
+        current_filtered = current_filtered.filter(today=True)
+
+    # sorted by:
+    # name, ingredientsText, rating, source
+    if sorted_by in {'name', 'rating'}:
+        if desc:
+            order_by = F(sorted_by).desc(nulls_last=True)
+        else:
+            order_by = F(sorted_by).asc(nulls_last=True)
+        current_filtered = current_filtered.order_by(order_by)
     if allowances != -1:
         # TODO: add auth!
         current_filtered = _filter_on_pantry(current_filtered, User.objects.first(),
@@ -303,11 +316,16 @@ class Query(object):
                                      page=graphene.Int(required=True),
                                      search_term=graphene.String(required=False),
                                      allowances=graphene.Int(required=False),
-                                     shortlist=graphene.Boolean(required=False))
+                                     shortlist=graphene.Boolean(required=False),
+                                     today=graphene.Boolean(required=False),
+                                     sorted_by=graphene.String(required=False),
+                                     desc=graphene.Boolean(required=False))
 
     def resolve_searched_recipes(self, info, first, page, search_term=None, allowances=0,
-                                 shortlist=False):
-        recipes = get_searched_recipes(info, search_term, allowances, shortlist)
+                                 shortlist=False, today=False, sorted_by=None, desc=None):
+        recipes = get_searched_recipes(info, search_term, allowances, shortlist, today,
+                                       sorted_by=sorted_by, desc=desc)
+
         paginator = Paginator(recipes, first)
         current_page = page//first
         return paginator.page(current_page+1).object_list
@@ -315,11 +333,13 @@ class Query(object):
 
     searched_recipes_count = graphene.Int(search_term=graphene.String(required=False),
                                           allowances=graphene.Int(required=False),
-                                          shortlist=graphene.Boolean(required=False))
+                                          shortlist=graphene.Boolean(required=False),
+                                          today=graphene.Boolean(required=False))
 
-    def resolve_searched_recipes_count(self, info, search_term=None, allowances=0, shortlist=False):
+    def resolve_searched_recipes_count(self, info, search_term=None, allowances=0,
+                                       shortlist=False, today=False):
         return get_searched_recipes(
-            info, search_term, allowances, shortlist, get_count=True)
+            info, search_term, allowances, shortlist, today, get_count=True)
 
     recipe = graphene.Field(RecipeType, recipe_id=graphene.Int(required=True))
 
