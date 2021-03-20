@@ -48,3 +48,5 @@ services:
       - psql-pgql
 networks:
   psql-pgql:
+volumes:
+  homebardatavol:
