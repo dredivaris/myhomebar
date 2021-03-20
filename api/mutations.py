@@ -66,6 +66,7 @@ class AddRecipeFlexible(graphene.Mutation):
         source = graphene.String()
         source_url = graphene.String()
         shortlist = graphene.Boolean()
+        today = graphene.Boolean()
         non_alcoholic = graphene.Boolean()
 
     Output = AddRecipeFlexibleResponseGraphql
