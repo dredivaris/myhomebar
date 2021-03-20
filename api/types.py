@@ -5,6 +5,10 @@ class AddRecipeResponseGraphql(graphene.ObjectType):
     recipe_id = graphene.Int()
 
 
+class DeleteRecipeResponseGraphql(graphene.ObjectType):
+    deleted = graphene.Boolean()
+
+
 class AddRecipesFromTextResponseGraphql(graphene.ObjectType):
     recipe_ids = graphene.List(graphene.Int)
 
