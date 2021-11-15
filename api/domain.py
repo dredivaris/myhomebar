@@ -397,6 +397,21 @@ def fix_vulgar_fractions(line):
     return line
 
 
+def convert_fractions(line):
+    fractions = {
+        '⅓': '1/3',
+        '⅔': '2/3',
+        '½': '1/2',
+        '¾': '3/4',
+        '¼': '1/4',
+        '⅛': '1/8',
+    }
+    for fraction, replace_with in fractions.items():
+        line = line.replace(fraction, replace_with)
+    line = ' '.join(line.split())
+    return line
+
+
 def handle_ingredient(recipe, line):
     line = cleanup(line)
     line, extras = clean_extras(line)
@@ -405,6 +420,7 @@ def handle_ingredient(recipe, line):
 
     print('to parse ingreedy: ', line)
     line = fix_vulgar_fractions(line)
+    line = convert_fractions(line)
     parsed_ingredient = Ingreedy().parse(line.strip())
     try:
         parsed_ingredient['quantity'][0]['amount'] = \
