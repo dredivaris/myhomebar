@@ -4,7 +4,7 @@ beautifulsoup4==4.7.1
 certifi==2018.11.29
 chardet==3.0.4
 decorator==4.3.0
-Django==2.2.5
+Django==2.2.27
 django-extensions==2.1.4
 EbookLib==0.17.1
 graphene==2.1.8
